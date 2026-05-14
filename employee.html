@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff System · Cloud Pavilion</title>
+  <link rel="stylesheet" href="css/employee.css">
+  <style>
+    .hidden { display: none !important; }
+    .toast {
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(80px);
+      padding: 12px 28px; border-radius: 40px; font-size: 14px; font-weight: 500;
+      box-shadow: 0 8px 24px rgba(0,0,0,.2); z-index: 9999; transition: transform .3s ease, opacity .3s;
+      opacity: 0; pointer-events: none;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+    .toast-success { background: #1e8449; color: #fff; }
+    .toast-error   { background: var(--danger); color: #fff; }
+    .notif-topbar-wrap { position: relative; }
+  </style>
+</head>
+<body data-page="app">
+
+<!-- ── MAIN APP LAYOUT ────────────────────────────── -->
+<div class="app">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-name">Cloud Pavilion</div>
+      <div class="brand-sub">Staff Management System</div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" data-panel="reservations">
+        <span class="nav-icon">📋</span> Reservations
+      </div>
+      <div class="nav-item hidden" id="adminNavItem" data-panel="admin">
+        <span class="nav-icon">👥</span> Staff Management
+      </div>
+      <div class="nav-item" data-panel="profile">
+        <span class="nav-icon">👤</span> My Profile
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div id="logoutBtn" style="cursor:pointer;color:rgba(255,255,255,.5)">Log Out →</div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-title" id="panelTitle">Reservations</div>
+      <div class="topbar-right">
+        <div class="notif-topbar-wrap">
+          <div class="notif-btn" id="notifBtn" title="Notifications">
+            🔔
+            <span class="badge" id="notifBadge" style="display:none">0</span>
+          </div>
+          <div class="notif-dropdown" id="notifDropdown">
+            <div class="notif-header">
+              Notifications
+              <span style="font-size:12px;color:var(--muted);font-weight:400;cursor:pointer" onclick="readAllNotifs()">Mark all read</span>
+            </div>
+            <div class="notif-list" id="notifList"></div>
+          </div>
+        </div>
+        <div class="avatar-btn" id="avatarBtn">
+          <div class="avatar" id="userAvatar">A</div>
+          <div class="avatar-name" id="userDisplayName">Loading…</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <div class="content">
+      <!-- Login notices bar -->
+      <div id="noticesBar" class="notices-bar"></div>
+
+      <!-- ── RESERVATIONS PANEL ─────────────────────── -->
+      <div class="panel active" id="panel-reservations">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Reservation List</span>
+            <button class="btn-primary" onclick="openAddRes()">+ Add Reservation</button>
+          </div>
+          <div class="card-body">
+            <div class="toolbar">
+              <input class="search-box" id="resSearch" type="text" placeholder="Search by phone or name…"
+                     oninput="loadReservations()">
+              <div class="filter-btns">
+                <button class="filter-btn active" data-type="all"     onclick="setResFilter('all')">All</button>
+                <button class="filter-btn"         data-type="small"   onclick="setResFilter('small')">Standard</button>
+                <button class="filter-btn"         data-type="medium"  onclick="setResFilter('medium')">Medium</button>
+                <button class="filter-btn"         data-type="large"   onclick="setResFilter('large')">Large</button>
+                <button class="filter-btn"         data-type="private" onclick="setResFilter('private')">Private</button>
+              </div>
+            </div>
+            <div style="overflow-x:auto">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Type</th><th>Table</th><th>Guest Name</th><th>Phone</th>
+                    <th>Party Size</th><th>Pre-Orders</th><th>Booked At</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="resTbody">
+                  <tr><td colspan="8"><div class="loading"><div class="spinner"></div>Loading…</div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── ADMIN PANEL ────────────────────────────── -->
+      <div class="panel" id="panel-admin">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Staff Account Management</span>
+            <button class="btn-primary" onclick="openCreateEmp()">+ Create Account</button>
+          </div>
+          <div class="card-body">
+            <div class="toolbar">
+              <input class="search-box" id="empSearch" type="text" placeholder="Search by username or name…"
+                     oninput="searchEmployees()">
+              <div style="font-size:13px;color:var(--muted)">Admins cannot view staff passwords</div>
+            </div>
+            <div style="overflow-x:auto">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Username</th><th>Full Name</th><th>Created</th><th>Status</th><th>Password</th><th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="empTbody">
+                  <tr><td colspan="6"><div class="loading"><div class="spinner"></div>Loading…</div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── PROFILE PANEL ──────────────────────────── -->
+      <div class="panel" id="panel-profile">
+        <div class="card" style="max-width:600px">
+          <div class="card-header"><span class="card-title">My Profile</span></div>
+          <div class="card-body">
+            <div id="profileContent">
+              <div class="loading"><div class="spinner"></div>Loading…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ── PENDING ROOMS FAB ───────────────────────────── -->
+<button class="pending-fab" onclick="openPendingRooms()" title="Pending Private Room Requests">
+  🏮
+  <span class="badge" id="pendingBadge" style="display:none">0</span>
+</button>
+
+<!-- ── STATS DRAWER ───────────────────────────────── -->
+<button class="drawer-toggle" id="statsToggle" title="Booking Statistics">◀</button>
+<aside class="stats-drawer" id="statsDrawer">
+  <div class="drawer-header">
+    <h3>📊 Booking Statistics</h3>
+    <button class="modal-close" id="statsClose">×</button>
+  </div>
+  <div class="drawer-body" id="statsContent">
+    <div class="loading"><div class="spinner"></div>Loading…</div>
+  </div>
+</aside>
+
+<!-- ── MINI NOTIFICATIONS ──────────────────────────── -->
+<div id="miniNotifContainer"></div>
+
+<!-- ── TOAST ──────────────────────────────────────── -->
+<div class="toast" id="toast"></div>
+
+<!-- ══════════════════════════════════════════════════
+     MODALS
+     ══════════════════════════════════════════════════ -->
+
+<!-- Add Reservation -->
+<div class="modal-overlay" id="modalAddRes">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Add Reservation</span>
+      <button class="modal-close" onclick="closeModal('modalAddRes')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Select Table *</label>
+        <select id="addResTable">
+          <option value="">-- Please select --</option>
+        </select>
+        <div class="form-error"></div>
+      </div>
+      <div class="form-group">
+        <label>Guest Name *</label>
+        <input id="addResName" type="text" placeholder="e.g. Mr. Smith" maxlength="30">
+        <div class="form-error"></div>
+      </div>
+      <div class="form-group">
+        <label>Phone Number *</label>
+        <input id="addResPhone" type="tel" placeholder="11-digit mobile number" maxlength="11">
+        <div class="form-error"></div>
+      </div>
+      <div class="form-group">
+        <label>Party Size</label>
+        <input id="addResParty" type="number" min="1" max="30" placeholder="Optional">
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="addResNotes" rows="2" placeholder="Optional notes"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('modalAddRes')">Cancel</button>
+      <button class="btn-primary" onclick="submitAddRes()">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Reservation -->
+<div class="modal-overlay" id="modalEditRes">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Edit Reservation</span>
+      <button class="modal-close" onclick="closeModal('modalEditRes')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editResId">
+      <div class="form-group">
+        <label>Guest Name *</label>
+        <input id="editResName" type="text" maxlength="30">
+        <div class="form-error"></div>
+      </div>
+      <div class="form-group">
+        <label>Phone Number</label>
+        <input id="editResPhone" type="tel" maxlength="11">
+        <div class="form-error"></div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="editResNotes" rows="2"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('modalEditRes')">Cancel</button>
+      <button class="btn-primary" onclick="submitEditRes()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Pending Rooms List -->
+<div class="modal-overlay" id="modalPendingRooms">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-header">
+      <span class="modal-title">🏮 Private Room Requests</span>
+      <button class="modal-close" onclick="closeModal('modalPendingRooms')">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="pendingRoomsList">
+        <div class="loading"><div class="spinner"></div>Loading…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Process Room Request -->
+<div class="modal-overlay" id="modalProcessRoom">
+  <div class="modal" style="max-width:580px">
+    <div class="modal-header">
+      <span class="modal-title">Assign Private Room</span>
+      <button class="modal-close" onclick="closeModal('modalProcessRoom')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="processReqId">
+      <div class="alert alert-info" style="margin-bottom:16px">
+        Please contact the guest to confirm party size, then search for an available room.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div class="form-group" style="margin:0">
+          <label>Guest Name</label>
+          <input id="processCustomerName" type="text" maxlength="30">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label>Phone Number</label>
+          <input id="processCustomerPhone" type="tel" maxlength="11">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Party Size *</label>
+        <div style="display:flex;gap:10px;align-items:center">
+          <input id="processPartySize" type="number" min="1" max="30" placeholder="Enter party size, then search"
+                 style="flex:1">
+          <button class="btn-primary" onclick="findRooms()">Search Rooms</button>
+        </div>
+      </div>
+      <div id="roomCandidates" style="margin-top:12px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('modalProcessRoom')">Cancel</button>
+      <button class="btn-primary" id="confirmRoomBtn" onclick="confirmRoom()" disabled>Confirm Assignment</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create Employee -->
+<div class="modal-overlay" id="modalCreateEmp">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <span class="modal-title">Create Staff Account</span>
+      <button class="modal-close" onclick="closeModal('modalCreateEmp')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info" style="margin-bottom:16px">
+        The username will be auto-generated as <strong>surname pinyin + given name initials + 4 random digits</strong>.
+        Default password: <code>123456</code>.
+      </div>
+      <div class="form-group">
+        <label>Full Name (Chinese characters) *</label>
+        <input id="newEmpName" type="text" placeholder="Chinese characters only" maxlength="10">
+      </div>
+      <div id="newEmpResult"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('modalCreateEmp')">Close</button>
+      <button class="btn-primary" onclick="submitCreateEmp()">Create Account</button>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Employee Name -->
+<div class="modal-overlay" id="modalEditEmp">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <span class="modal-title">Update Staff Name</span>
+      <button class="modal-close" onclick="closeModal('modalEditEmp')">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editEmpId">
+      <p style="font-size:14px;color:var(--muted);margin-bottom:16px">
+        Current name: <strong id="editEmpOldName"></strong>
+      </p>
+      <div class="alert alert-warning" style="margin-bottom:16px">
+        Updating the name will <strong>generate a new username</strong>. The old username remains usable
+        for 30 days, then is automatically removed.
+      </div>
+      <div class="form-group">
+        <label>New Name (Chinese characters) *</label>
+        <input id="editEmpName" type="text" placeholder="Chinese characters only" maxlength="10">
+      </div>
+      <div id="editEmpResult"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('modalEditEmp')">Cancel</button>
+      <button class="btn-primary" onclick="submitEditEmp()">Confirm Update</button>
+    </div>
+  </div>
+</div>
+
+<!-- Set Nickname -->
+<div class="modal-overlay" id="modalNickname">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <span class="modal-title">Set Nickname</span>
+      <button class="modal-close" onclick="closeModal('modalNickname')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info" style="margin-bottom:16px">
+        Your nickname can also be used to log in. It can be changed once every 7 days.
+      </div>
+      <div class="form-group">
+        <label>Nickname</label>
+        <input id="nicknameInput" type="text" placeholder="Up to 20 characters" maxlength="20">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('modalNickname')">Cancel</button>
+      <button class="btn-primary" onclick="submitNickname()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Change Password -->
+<div class="modal-overlay" id="modalChangePass">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <span class="modal-title">Change Password</span>
+      <button class="modal-close" onclick="closeModal('modalChangePass')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="alert alert-info" style="margin-bottom:16px">
+        Your old password remains usable for <strong>72 hours</strong> after the change, in case you forget.
+      </div>
+      <div class="form-group">
+        <label>Current Password</label>
+        <input id="oldPassword" type="password" autocomplete="current-password">
+      </div>
+      <div class="form-group">
+        <label>New Password (at least 6 characters)</label>
+        <input id="newPassword" type="password" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label>Confirm New Password</label>
+        <input id="confirmPassword" type="password" autocomplete="new-password">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('modalChangePass')">Cancel</button>
+      <button class="btn-primary" onclick="submitChangePassword()">Change Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- Notification Alert Modal (account/password reminders) -->
+<div class="modal-overlay" id="modalNotifAlert">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <span class="modal-title">⚠️ Important Notice</span>
+      <button class="modal-close" onclick="closeNotifAlertModal()">×</button>
+    </div>
+    <div class="modal-body" id="notifAlertContent"></div>
+    <div class="modal-footer">
+      <button class="btn-primary" onclick="closeNotifAlertModal()">Understood</button>
+    </div>
+  </div>
+</div>
+
+<!-- View Pre-Orders Modal -->
+<div class="modal-overlay" id="modalPreOrders">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <span class="modal-title">🍽️ Pre-Orders</span>
+      <button class="modal-close" onclick="closeModal('modalPreOrders')">×</button>
+    </div>
+    <div class="modal-body" id="preOrdersContent">
+      <div class="loading"><div class="spinner"></div>Loading…</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('modalPreOrders')">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/employee.js"></script>
+</body>
+</html>

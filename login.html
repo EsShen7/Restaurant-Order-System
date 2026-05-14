@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff Login · Cloud Pavilion</title>
+  <link rel="stylesheet" href="css/employee.css">
+</head>
+<body data-page="login">
+<div class="login-page">
+  <div class="login-box">
+    <div class="login-logo"><span>Cloud Pavilion</span> Staff Portal</div>
+    <div class="login-sub">Cloud Pavilion · Staff Portal</div>
+    <form id="loginForm" autocomplete="off">
+      <div class="form-group">
+        <label for="loginUser">Username / Nickname</label>
+        <input id="loginUser" type="text" placeholder="Enter your username or nickname" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label for="loginPass">Password</label>
+        <input id="loginPass" type="password" placeholder="Enter your password" autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn-login">Log In</button>
+      <div id="loginErr" class="login-err"></div>
+    </form>
+  </div>
+</div>
+<script src="js/employee.js"></script>
+</body>
+</html>
