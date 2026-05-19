@@ -69,7 +69,7 @@ try {
         old_username VARCHAR(100) NOT NULL,
         new_username VARCHAR(100) NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        expiry_date TIMESTAMP NOT NULL,
+        expiry_date TIMESTAMP NULL DEFAULT NULL,
         new_account_used TINYINT(1) DEFAULT 0,
         reminders_cancelled TINYINT(1) DEFAULT 0,
         reminders_sent VARCHAR(20) DEFAULT '',
