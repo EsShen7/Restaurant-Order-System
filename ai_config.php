@@ -18,7 +18,18 @@
 define('AI_PROVIDER', 'deepseek');
 
 // ── API 密钥（根据上面的 provider 填写对应的 key）──
-define('DEEPSEEK_API_KEY', 'sk-a69d9a492dae4bbeb6f0dab00c9e2f2d');
+// 优先从 .env 文件读取（推荐，.env 已 gitignore，密钥不会泄漏）
+$envFile = __DIR__ . '/.env';
+if (file_exists($envFile)) {
+    foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        if (str_starts_with(trim($line), 'DEEPSEEK_API_KEY=')) {
+            define('DEEPSEEK_API_KEY', trim(substr($line, strpos($line, '=') + 1)));
+        }
+    }
+}
+if (!defined('DEEPSEEK_API_KEY')) {
+    define('DEEPSEEK_API_KEY', '');
+}
 define('SILICONFLOW_API_KEY', '');
 define('GEMINI_API_KEY', '');
 define('OPENAI_API_KEY', '');
