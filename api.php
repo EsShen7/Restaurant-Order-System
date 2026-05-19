@@ -10,6 +10,7 @@ set_exception_handler(function (Throwable $e) {
 });
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/ai_config.php';
 
 $body   = json_decode(file_get_contents('php://input'), true) ?? [];
 $data   = array_merge($_GET, $_POST, $body);
@@ -40,6 +41,7 @@ switch ($action) {
 
     // Public — menu & customer self-service
     case 'get_menu':                     getMenu();                    break;
+    case 'ai_search':                    aiSearch();                   break;
     case 'add_pre_order':               addPreOrder();                break;
     case 'find_customer_reservation':   findCustomerReservation();    break;
     case 'customer_update_reservation':     customerUpdateReservation();      break;
@@ -745,6 +747,349 @@ function getMenu() {
         ['id' => 9,  'name' => 'Handmade Dimsum Platter',        'emoji' => '🧆'],
         ['id' => 10, 'name' => 'Seasonal Vegetable Medley',      'emoji' => '🥦'],
     ]]);
+}
+
+/* ============================================================
+   AI-POWERED SMART SEARCH (DeepSeek AI + keyword fallback)
+   ============================================================ */
+
+function aiSearch() {
+    global $data;
+    $query = trim($data['query'] ?? '');
+    $scope = $data['scope'] ?? 'staff';
+
+    if (!$query) err('Please enter a search query.');
+    if ($scope === 'staff') auth();
+
+    $db = getDB();
+
+    // Step 1: Try AI-powered search (DeepSeek understands intent → PHP queries DB)
+    try {
+        $result = aiPoweredSearch($db, $query, $scope);
+        if ($result !== null) {
+            ok($result);
+            return;
+        }
+    } catch (Throwable $e) {
+        // AI failed — fall through to keyword matching
+    }
+
+    // Step 2: Fallback — keyword matching
+    $result = smartMatchSearch($db, $query, $scope);
+    if ($result !== null) {
+        $result['ai'] = false;
+        ok($result);
+        return;
+    }
+
+    // Step 3: General status as last resort
+    $general = generalStatus($db, $scope);
+    $general['ai'] = false;
+    ok($general);
+}
+
+/**
+ * AI-powered search: send question + DB context to DeepSeek,
+ * parse the JSON intent response, then execute the appropriate DB query.
+ * Returns null if AI fails or can't understand.
+ */
+function aiPoweredSearch(PDO $db, string $query, string $scope): ?array {
+    $context = buildAIContext();
+
+    $prompt = <<<PROMPT
+You are a restaurant assistant for "Cloud Pavilion". Analyze the user's question and return ONLY valid JSON.
+
+{$context}
+
+User question: {$query}
+
+Respond with ONLY this JSON format (no other text, no markdown):
+{
+  "intent": "check_availability | find_reservation | search_employee | general_status",
+  "params": {
+    "type": "small|medium|large|private",
+    "customer_name": "",
+    "phone": "",
+    "table_number": "",
+    "search_text": ""
+  },
+  "summary": "A brief Chinese or English summary of what was found, matching the user's language",
+  "suggestion": "A helpful follow-up suggestion, or empty string"
+}
+
+Rules:
+- check_availability: user asks about free/available tables or private rooms
+- find_reservation: user asks about a specific booking (by name, phone, table)
+- search_employee: staff search only, finding employee info
+- general_status: overview of restaurant
+- Fill ONLY the params you have info for, leave others empty
+- summary should be in the user's language (Chinese if they asked in Chinese)
+PROMPT;
+
+    $response = callAI($prompt);
+
+    // Parse JSON from response
+    $json = json_decode($response, true);
+    if (!$json) {
+        // Try extracting from code block if wrapped in markdown
+        if (preg_match('/```(?:json)?\s*\n?(.*?)\n?```/s', $response, $m)) {
+            $json = json_decode($m[1], true);
+        }
+    }
+    if (!$json) {
+        // Last resort: find anything that looks like JSON
+        preg_match('/\{(?:[^{}]|(?R))*\}/s', $response, $m);
+        if (!empty($m[0]) && ($decoded = json_decode($m[0], true))) {
+            $json = $decoded;
+        }
+    }
+
+    if (!$json || empty($json['intent'])) return null;
+
+    $intent     = $json['intent'];
+    $params     = $json['params'] ?? [];
+    $summary    = trim($json['summary'] ?? '');
+    $suggestion = trim($json['suggestion'] ?? '');
+
+    $result = null;
+
+    switch ($intent) {
+        case 'check_availability':
+            $type = $params['type'] ?? '';
+            if (!in_array($type, ['small','medium','large','private',''])) $type = '';
+            $result = buildAvailabilityResult($db, $type);
+            // Override the default summary with AI-generated one
+            if ($summary) $result['ai_summary'] = $summary;
+            break;
+
+        case 'find_reservation':
+            $filters = [];
+            if (!empty($params['customer_name'])) $filters['customer_name'] = $params['customer_name'];
+            if (!empty($params['phone']))          $filters['phone']          = $params['phone'];
+            if (!empty($params['table_number']))   $filters['table_number']   = $params['table_number'];
+
+            if (!empty($filters)) {
+                $result = buildReservationResult($db, $filters);
+            }
+
+            // If AI had specific filters but no results, try fuzzy search
+            if (!$result || $result['count'] === 0) {
+                $searchText = $params['search_text'] ?? $params['customer_name'] ?? $query;
+                $like = "%{$searchText}%";
+                $stmt = $db->prepare(
+                    "SELECT r.id, r.customer_name, r.phone, r.party_size, r.created_at,
+                            dt.table_number, dt.type AS table_type
+                     FROM reservations r JOIN dining_tables dt ON dt.id=r.table_id
+                     WHERE r.status='confirmed'
+                       AND (r.customer_name LIKE ? OR r.phone LIKE ? OR dt.table_number LIKE ?)
+                     ORDER BY r.created_at DESC LIMIT 20"
+                );
+                $stmt->execute([$like, $like, $like]);
+                $rows = $stmt->fetchAll();
+                $result = [
+                    'success' => true,
+                    'type'    => 'reservations',
+                    'results' => $rows,
+                    'count'   => count($rows),
+                ];
+            }
+
+            if ($summary) $result['ai_summary'] = $summary;
+            break;
+
+        case 'search_employee':
+            if ($scope !== 'staff') return null;
+            $searchText = $params['search_text'] ?? $params['customer_name'] ?? $query;
+            $result = buildEmployeeResult($db, $searchText);
+            if ($summary) $result['ai_summary'] = $summary;
+            break;
+
+        case 'general_status':
+        case 'general':
+            $result = generalStatus($db, $scope);
+            if ($summary) $result['ai_summary'] = $summary;
+            break;
+
+        default:
+            return null; // Unknown intent → keyword fallback
+    }
+
+    if ($result) {
+        $result['ai'] = true;
+        if ($suggestion) $result['ai_suggestion'] = $suggestion;
+        return $result;
+    }
+
+    return null;
+}
+
+/**
+ * 纯关键词智能搜索 — 不依赖任何外部 API
+ */
+function smartMatchSearch(PDO $db, string $query, string $scope): ?array {
+    $q = mb_strtolower($query, 'UTF-8');
+
+    // 1. 查询空余桌位
+    $availWords = ['空', 'available', '有空', '还有', '剩余', '包间', '包厢', 'private', 'free', '空闲'];
+    foreach ($availWords as $kw) {
+        if (mb_strpos($q, $kw) !== false) {
+            $type = '';
+            if (mb_strpos($q, '包间') !== false || mb_strpos($q, '包厢') !== false || mb_strpos($q, 'private') !== false) {
+                $type = 'private';
+            } elseif (mb_strpos($q, '大') !== false && mb_strpos($q, '桌') === false) {
+                $type = 'large';
+            } elseif (mb_strpos($q, '中') !== false) {
+                $type = 'medium';
+            } elseif (mb_strpos($q, '小') !== false || mb_strpos($q, '标准') !== false) {
+                $type = 'small';
+            }
+            return buildAvailabilityResult($db, $type);
+        }
+    }
+
+    // 2. 手机号查询
+    if (preg_match('/1[3-9]\d{9}/', $query, $m)) {
+        return buildReservationResult($db, ['phone' => $m[0]]);
+    }
+
+    // 3. 桌号查询（Table 5 / 桌3 / 5号桌 / #7）
+    if (preg_match('/(?:table|桌|号|#)\s*(\d+)/i', $query, $m)) {
+        return buildReservationResult($db, ['table_number' => $m[1]]);
+    }
+
+    // 4. 中文姓名（2-4 个字）
+    if (preg_match('/^[\x{4e00}-\x{9fa5}]{2,4}$/u', $query)) {
+        $r = buildReservationResult($db, ['customer_name' => $query]);
+        if ($r['count'] > 0) return $r;
+        if ($scope === 'staff') {
+            $e = buildEmployeeResult($db, $query);
+            if ($e['count'] > 0) return $e;
+        }
+    }
+
+    // 5. 模糊搜索（姓名、电话、桌号）
+    $stmt = $db->prepare(
+        "SELECT r.id, r.customer_name, r.phone, r.party_size, r.created_at,
+                dt.table_number, dt.type AS table_type
+         FROM reservations r JOIN dining_tables dt ON dt.id=r.table_id
+         WHERE r.status='confirmed' AND (r.customer_name LIKE ? OR r.phone LIKE ? OR dt.table_number LIKE ?)
+         ORDER BY r.created_at DESC LIMIT 20"
+    );
+    $like = "%{$query}%";
+    $stmt->execute([$like, $like, $like]);
+    $rows = $stmt->fetchAll();
+    if (count($rows) > 0) {
+        return ['success' => true, 'type' => 'reservations', 'results' => $rows, 'count' => count($rows)];
+    }
+
+    return null;
+}
+
+function buildAvailabilityResult(PDO $db, string $typeFilter): array {
+    $sql = "SELECT dt.type, COUNT(*) AS total,
+                   COUNT(*) - COUNT(r.id) AS available
+            FROM dining_tables dt
+            LEFT JOIN reservations r ON r.table_id = dt.id AND r.status = 'confirmed'";
+    $binds = [];
+    if ($typeFilter) {
+        $sql .= " WHERE dt.type = ?";
+        $binds[] = $typeFilter;
+    }
+    $sql .= " GROUP BY dt.type ORDER BY FIELD(dt.type,'small','medium','large','private')";
+    $stmt = $db->prepare($sql);
+    $stmt->execute($binds);
+    $stats = $stmt->fetchAll();
+
+    // 获取具体可用的桌位列表
+    $availSql = "SELECT dt.id, dt.type, dt.table_number, dt.min_capacity, dt.max_capacity
+                 FROM dining_tables dt
+                 WHERE dt.id NOT IN (SELECT table_id FROM reservations WHERE status='confirmed')";
+    $availBinds = [];
+    if ($typeFilter) {
+        $availSql .= " AND dt.type = ?";
+        $availBinds[] = $typeFilter;
+    }
+    $availSql .= " ORDER BY dt.type, dt.table_number LIMIT 30";
+    $s2 = $db->prepare($availSql);
+    $s2->execute($availBinds);
+
+    $summary = 'Tables availability';
+    if ($typeFilter) {
+        $typeNames = ['small'=>'Standard', 'medium'=>'Medium', 'large'=>'Large', 'private'=>'Private Room'];
+        $summary = $typeNames[$typeFilter] . ' availability';
+    }
+
+    return [
+        'success' => true,
+        'type' => 'availability',
+        'stats' => $stats,
+        'available_tables' => $s2->fetchAll(),
+        'count' => count($stats),
+        'ai_summary' => $summary,
+    ];
+}
+
+function buildReservationResult(PDO $db, array $filters): array {
+    $sql = "SELECT r.id, r.customer_name, r.phone, r.party_size, r.notes, r.created_at,
+                   dt.table_number, dt.type AS table_type
+            FROM reservations r JOIN dining_tables dt ON dt.id=r.table_id
+            WHERE r.status='confirmed'";
+    $binds = [];
+
+    if (!empty($filters['customer_name'])) {
+        $sql .= " AND r.customer_name LIKE ?";
+        $binds[] = '%' . $filters['customer_name'] . '%';
+    }
+    if (!empty($filters['phone'])) {
+        $sql .= " AND r.phone LIKE ?";
+        $binds[] = '%' . $filters['phone'] . '%';
+    }
+    if (!empty($filters['table_number'])) {
+        $sql .= " AND dt.table_number LIKE ?";
+        $binds[] = '%' . $filters['table_number'] . '%';
+    }
+    $sql .= " ORDER BY r.created_at DESC LIMIT 50";
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($binds);
+    $rows = $stmt->fetchAll();
+    $count = count($rows);
+    $summary = $count > 0 ? "Found {$count} reservation(s)" : 'No reservations found';
+
+    return ['success' => true, 'type' => 'reservations', 'results' => $rows, 'count' => $count, 'ai_summary' => $summary];
+}
+
+function buildEmployeeResult(PDO $db, string $search): array {
+    $sql = "SELECT id, username, nickname, full_name, is_active, created_at
+            FROM employees WHERE is_admin=0
+            AND (username LIKE ? OR full_name LIKE ? OR nickname LIKE ?)
+            ORDER BY created_at DESC LIMIT 20";
+    $like = "%{$search}%";
+    $stmt = $db->prepare($sql);
+    $stmt->execute([$like, $like, $like]);
+    $rows = $stmt->fetchAll();
+    return ['success' => true, 'type' => 'employees', 'results' => $rows, 'count' => count($rows)];
+}
+
+function generalStatus(PDO $db, string $scope): array {
+    $stats = $db->query(
+        "SELECT dt.type, COUNT(*) AS total,
+                SUM(CASE WHEN r.id IS NOT NULL THEN 1 ELSE 0 END) AS reserved
+         FROM dining_tables dt
+         LEFT JOIN reservations r ON r.table_id = dt.id AND r.status='confirmed'
+         GROUP BY dt.type"
+    )->fetchAll();
+    $pending = $db->query("SELECT COUNT(*) FROM private_room_requests WHERE status='pending'")->fetchColumn();
+    $total = $db->query("SELECT COUNT(*) FROM reservations WHERE status='confirmed'")->fetchColumn();
+    return [
+        'success' => true,
+        'type' => 'general',
+        'stats' => $stats,
+        'pending_rooms' => (int)$pending,
+        'total_reservations' => (int)$total,
+        'scope' => $scope,
+        'ai_summary' => "Found {$total} confirmed reservations",
+    ];
 }
 
 function addPreOrder() {

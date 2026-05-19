@@ -10,7 +10,7 @@ CREATE DATABASE IF NOT EXISTS restaurant_db
 USE restaurant_db;
 
 -- ─────────────────────────────────────────
--- 1. USERS
+-- 1. USER
 -- ─────────────────────────────────────────
 CREATE TABLE users (
     user_id      INT AUTO_INCREMENT PRIMARY KEY,

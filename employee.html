@@ -86,8 +86,13 @@
           </div>
           <div class="card-body">
             <div class="toolbar">
-              <input class="search-box" id="resSearch" type="text" placeholder="Search by phone or name…"
-                     oninput="loadReservations()">
+              <div class="search-group">
+                <input class="search-box" id="resSearch" type="text" placeholder="Search by phone or name…"
+                       oninput="loadReservations()">
+                <button class="btn-ai-search" onclick="openAISearch()" title="AI Smart Search">
+                  <span class="ai-sparkle">✨</span> AI Search
+                </button>
+              </div>
               <div class="filter-btns">
                 <button class="filter-btn active" data-type="all"     onclick="setResFilter('all')">All</button>
                 <button class="filter-btn"         data-type="small"   onclick="setResFilter('small')">Standard</button>
@@ -185,6 +190,39 @@
 <!-- ══════════════════════════════════════════════════
      MODALS
      ══════════════════════════════════════════════════ -->
+
+<!-- AI Smart Search Modal -->
+<div class="modal-overlay" id="modalAISearch">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-header">
+      <span class="modal-title">✨ AI Smart Search</span>
+      <button class="modal-close" onclick="closeModal('modalAISearch')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="ai-search-input-wrap">
+        <input class="ai-search-input" id="aiSearchInput" type="text"
+               placeholder="Ask anything… e.g. &quot;Find reservations for table 5&quot;, &quot;Show me VIP guests&quot;, &quot;What tables are available?&quot;"
+               onkeydown="if(event.key==='Enter') submitAISearch()">
+        <button class="btn-ai-search" onclick="submitAISearch()">
+          <span class="ai-sparkle">✨</span> Search
+        </button>
+      </div>
+      <div class="ai-search-examples">
+        Try: <span onclick="setAIQuery('Show all reservations for private rooms')">Show all reservations for private rooms</span>
+        <span onclick="setAIQuery('Find reservations by phone 138')">Find reservations by phone 138</span>
+        <span onclick="setAIQuery('What tables are available?')">What tables are available?</span>
+        <span onclick="setAIQuery('How many reservations are there?')">How many reservations are there?</span>
+      </div>
+      <div id="aiSearchResults" class="ai-search-results">
+        <div class="ai-search-placeholder">
+          <div class="ai-placeholder-icon">✨</div>
+          <p>Ask a natural language question to search across reservations, tables, and staff.</p>
+          <p class="ai-placeholder-sub">Powered by AI — try typing a question above!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- Add Reservation -->
 <div class="modal-overlay" id="modalAddRes">

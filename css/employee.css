@@ -539,3 +539,188 @@ body { font-family: 'PingFang SC','Microsoft YaHei',sans-serif; color: var(--tex
   from { transform: translateX(120%); opacity: 0; }
   to   { transform: translateX(0);    opacity: 1; }
 }
+
+/* ── AI SMART SEARCH ──────────────────────────────── */
+.search-group {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  min-width: 200px;
+  max-width: 460px;
+}
+.search-group .search-box {
+  flex: 1;
+  min-width: 140px;
+  max-width: 280px;
+}
+.btn-ai-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 8px;
+  border: 1.5px solid var(--accent);
+  background: linear-gradient(135deg, rgba(201,168,76,.1), rgba(232,201,122,.18));
+  color: #7a6030;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--trans);
+  white-space: nowrap;
+  font-family: inherit;
+}
+.btn-ai-search:hover {
+  background: linear-gradient(135deg, var(--accent), #e8c97a);
+  color: #1a1208;
+  box-shadow: 0 2px 12px rgba(201,168,76,.35);
+  transform: translateY(-1px);
+}
+.ai-sparkle {
+  font-size: 14px;
+  animation: sparkle 2s ease-in-out infinite;
+  display: inline-block;
+}
+
+.ai-search-input-wrap {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.ai-search-input {
+  flex: 1;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  font-size: 14px;
+  outline: none;
+  transition: var(--trans);
+  font-family: inherit;
+  color: var(--text);
+}
+.ai-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(201,168,76,.12);
+}
+
+.ai-search-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 18px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ai-search-examples span {
+  color: var(--primary-l);
+  cursor: pointer;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: rgba(37,99,160,.06);
+  border: 1px solid rgba(37,99,160,.12);
+  transition: var(--trans);
+}
+.ai-search-examples span:hover {
+  background: rgba(37,99,160,.12);
+  border-color: var(--primary-l);
+}
+
+.ai-search-results {
+  min-height: 120px;
+}
+.ai-search-placeholder {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--muted);
+}
+.ai-placeholder-icon {
+  font-size: 42px;
+  margin-bottom: 12px;
+}
+.ai-search-placeholder p {
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.ai-placeholder-sub {
+  font-size: 12px;
+  opacity: .7;
+}
+
+.ai-result-summary {
+  padding: 14px 18px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(37,99,160,.06), rgba(201,168,76,.06));
+  border: 1px solid rgba(201,168,76,.18);
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.ai-result-table-wrap {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.ai-result-table-wrap table {
+  font-size: 13px;
+}
+.ai-result-table-wrap table th {
+  background: #f6f8fb;
+  padding: 10px 14px;
+}
+.ai-result-table-wrap table td {
+  padding: 10px 14px;
+}
+
+.ai-avail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+.ai-avail-card {
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  text-align: center;
+  background: var(--white);
+}
+.ai-avail-type {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.ai-avail-num {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text);
+}
+.ai-avail-label {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.ai-table-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: rgba(37,99,160,.08);
+  border: 1px solid rgba(37,99,160,.15);
+  font-size: 12px;
+  color: var(--primary-l);
+}
+
+.ai-suggestion {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: rgba(39,174,96,.08);
+  border-left: 3px solid var(--success);
+  font-size: 13px;
+  color: #1e5631;
+  line-height: 1.6;
+}
+
+@keyframes sparkle {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50%      { transform: scale(1.15) rotate(8deg); }
+}

@@ -406,8 +406,151 @@ async function rejectRoom(reqId) {
 }
 
 /* ─────────────────────────────────────────────────────
-   NOTIFICATIONS
+   AI SMART SEARCH
    ───────────────────────────────────────────────────── */
+function openAISearch() {
+  document.getElementById('aiSearchInput').value = '';
+  document.getElementById('aiSearchResults').innerHTML = `
+    <div class="ai-search-placeholder">
+      <div class="ai-placeholder-icon">✨</div>
+      <p>Ask a natural language question to search across reservations, tables, and staff.</p>
+      <p class="ai-placeholder-sub">Powered by AI — try typing a question above!</p>
+    </div>`;
+  openModal('modalAISearch');
+  setTimeout(() => document.getElementById('aiSearchInput').focus(), 200);
+}
+
+function setAIQuery(text) {
+  document.getElementById('aiSearchInput').value = text;
+  submitAISearch();
+}
+
+async function submitAISearch() {
+  const query = document.getElementById('aiSearchInput').value.trim();
+  if (!query) { showToast('Please enter a search query.', 'error'); return; }
+
+  const resultsEl = document.getElementById('aiSearchResults');
+  resultsEl.innerHTML = `<div class="loading"><div class="spinner"></div><p style="color:var(--muted);font-size:13px">🤔 Thinking…</p></div>`;
+
+  try {
+    const res = await api('ai_search', { query, scope: 'staff' });
+    renderAIResults(res, query);
+  } catch (e) {
+    resultsEl.innerHTML = `<div class="alert alert-danger">${esc(e.message)}</div>`;
+  }
+}
+
+function renderAIResults(res, query) {
+  const el = document.getElementById('aiSearchResults');
+
+  if (res.ai_summary) {
+    el.innerHTML = `<div class="ai-result-summary">💡 ${esc(res.ai_summary)}</div>`;
+  }
+
+  if (res.type === 'reservations' && res.results?.length) {
+    const typeNames = { small: 'Standard', medium: 'Medium', large: 'Large', private: 'Private' };
+    el.innerHTML += `
+      <div style="margin-top:16px">
+        <div style="font-size:13px;font-weight:600;color:var(--muted);margin-bottom:10px">
+          📋 Found ${res.count} reservation(s)
+        </div>
+        <div class="ai-result-table-wrap">
+          <table class="data-table" style="font-size:13px">
+            <thead><tr>
+              <th>Type</th><th>Table</th><th>Guest Name</th><th>Phone</th><th>Party</th>
+            </tr></thead>
+            <tbody>
+              ${res.results.map(r => `
+                <tr>
+                  <td><span class="tag tag-${r.table_type}">${typeNames[r.table_type] || r.table_type}</span></td>
+                  <td><strong>${esc(r.table_number)}</strong></td>
+                  <td>${esc(r.customer_name)}</td>
+                  <td>${esc(r.phone)}</td>
+                  <td>${r.party_size ? r.party_size + ' guests' : '—'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  } else if (res.type === 'availability' && res.stats?.length) {
+    const typeNames = { small: 'Standard', medium: 'Medium', large: 'Large', private: 'Private Room' };
+    el.innerHTML += `
+      <div style="margin-top:16px">
+        <div style="font-size:13px;font-weight:600;color:var(--muted);margin-bottom:10px">📊 Availability Overview</div>
+        <div class="ai-avail-grid">
+          ${res.stats.map(s => `
+            <div class="ai-avail-card">
+              <div class="ai-avail-type">${typeNames[s.type] || s.type}</div>
+              <div class="ai-avail-num">${parseInt(s.available)} / ${parseInt(s.total)}</div>
+              <div class="ai-avail-label">available</div>
+              <div class="progress" style="margin-top:6px">
+                <div class="progress-fill" style="width:${s.total > 0 ? ((s.total - s.available) / s.total * 100) : 0}%"></div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+    if (res.available_tables?.length) {
+      el.innerHTML += `
+        <div style="margin-top:12px">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Available tables:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            ${res.available_tables.map(t =>
+              `<span class="ai-table-chip">${esc(t.table_number)} (${esc(t.type)})</span>`
+            ).join('')}
+          </div>
+        </div>`;
+    }
+  } else if (res.type === 'tables' && res.results?.length) {
+    const typeNames = { small: 'Standard', medium: 'Medium', large: 'Large', private: 'Private Room' };
+    el.innerHTML += `
+      <div style="margin-top:16px">
+        <div style="font-size:13px;font-weight:600;color:var(--muted);margin-bottom:10px">🪑 Found ${res.count} table(s)</div>
+        <div class="ai-result-table-wrap">
+          <table class="data-table" style="font-size:13px">
+            <thead><tr><th>Table</th><th>Type</th><th>Capacity</th></tr></thead>
+            <tbody>
+              ${res.results.map(t => `
+                <tr>
+                  <td><strong>${esc(t.table_number)}</strong></td>
+                  <td><span class="tag tag-${t.type}">${typeNames[t.type] || t.type}</span></td>
+                  <td>${t.min_capacity}–${t.max_capacity} guests</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  } else if (res.type === 'employees' && res.results?.length) {
+    el.innerHTML += `
+      <div style="margin-top:16px">
+        <div style="font-size:13px;font-weight:600;color:var(--muted);margin-bottom:10px">👥 Found ${res.count} employee(s)</div>
+        <div class="ai-result-table-wrap">
+          <table class="data-table" style="font-size:13px">
+            <thead><tr><th>Username</th><th>Name</th><th>Status</th></tr></thead>
+            <tbody>
+              ${res.results.map(e => `
+                <tr>
+                  <td>${esc(e.username)}</td>
+                  <td>${esc(e.full_name)}</td>
+                  <td><span style="color:${e.is_active ? 'var(--success)' : 'var(--muted)'}">${e.is_active ? 'Active' : 'Disabled'}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  } else if (res.results && res.results.length === 0 && res.ai_summary) {
+    // Already showing summary, nothing extra needed
+  } else if (!res.ai_summary) {
+    el.innerHTML = `<div class="ai-search-placeholder"><div class="ai-placeholder-icon">🔍</div><p>No results found for "${esc(query)}". Try rephrasing your question.</p></div>`;
+  }
+
+  if (res.ai_suggestion) {
+    el.innerHTML += `<div class="ai-suggestion">💡 ${esc(res.ai_suggestion)}</div>`;
+  }
+}
 function toggleNotifications() {
   const dd = document.getElementById('notifDropdown');
   const showing = dd.classList.toggle('show');

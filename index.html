@@ -4,10 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cloud Pavilion · Fine Chinese Cuisine</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400&family=Lato:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/customer.css">
+  <script src="js/customer.js?v=2"></script>
 </head>
 <body>
 
@@ -276,6 +274,30 @@
   <div class="section-line reveal delay-2"><span>✦</span></div>
 
   <div class="res-container">
+    <!-- AI Smart Assistant -->
+    <div class="ai-assistant-section reveal delay-3">
+      <div class="ai-assistant-header">
+        <span class="ai-assistant-icon">✨</span>
+        <span>AI Smart Assistant</span>
+      </div>
+      <p class="ai-assistant-desc">Ask anything about your reservation or our tables — in plain English.</p>
+      <div class="ai-assistant-input-wrap">
+        <input class="ai-assistant-input" id="aiCustomerInput" type="text"
+               placeholder='e.g. "Find my reservation", "What tables are available for 4 people?"'
+               onkeydown="if(event.key==='Enter') submitCustomerAISearch()">
+        <button class="btn-ai-assistant" onclick="submitCustomerAISearch()">
+          <span>✨</span> Ask
+        </button>
+      </div>
+      <div class="ai-assistant-suggestions">
+        <span onclick="setCustomerAIQuery('Find my reservation by name')">Find my reservation</span>
+        <span onclick="setCustomerAIQuery('What tables are available tonight?')">Available tables</span>
+        <span onclick="setCustomerAIQuery('How do I book a table?')">How to book?</span>
+        <span onclick="setCustomerAIQuery('Tell me about the private rooms')">About private rooms</span>
+      </div>
+      <div id="aiCustomerResults" class="ai-assistant-results"></div>
+    </div>
+
     <!-- Lookup form -->
     <div id="lu-form-panel">
       <p style="text-align:center;color:rgba(255,255,255,.45);font-size:14px;margin-bottom:34px">
@@ -319,6 +341,5 @@
   <p style="margin-top:16px;font-size:11px">© 2025 Cloud Pavilion. All rights reserved.</p>
 </footer>
 
-<script src="js/customer.js"></script>
 </body>
 </html>
