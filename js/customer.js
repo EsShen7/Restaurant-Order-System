@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('navManageBtn')?.addEventListener('click', scrollToManage);
   loadAvailability();
   loadMenu();
+  initVisualEffects();
 });
 
 function scrollToReservation() {
@@ -133,13 +134,13 @@ function showResult(type, name, msg) {
   const preorderDone    = document.getElementById('preorder-done');
   preorderDone.style.display = 'none';
 
+  preorderSection.style.display = 'none';
+  doneBtnWrap.style.display     = 'none';
   if (type === 'success' && state.reservationId) {
-    preorderSection.style.display = '';
-    doneBtnWrap.style.display     = 'none';
     renderPreorderMenu();
+    setTimeout(() => fadeIn(preorderSection, 400), 80);
   } else {
-    preorderSection.style.display = 'none';
-    doneBtnWrap.style.display     = '';
+    setTimeout(() => fadeIn(doneBtnWrap, 380), 80);
   }
 }
 
@@ -216,9 +217,12 @@ async function submitPreorder() {
   btn.disabled = true; btn.textContent = 'Submitting…';
   try {
     await api('add_pre_order', { reservation_id: state.reservationId, items });
-    document.getElementById('preorder-section').style.display = 'none';
-    document.getElementById('preorder-done').style.display    = '';
-    document.getElementById('booking-done-btn').style.display = '';
+    const preorderDoneEl = document.getElementById('preorder-done');
+    const doneBtnEl      = document.getElementById('booking-done-btn');
+    fadeOut(document.getElementById('preorder-section'), 260, () => {
+      fadeIn(preorderDoneEl, 380);
+      setTimeout(() => fadeIn(doneBtnEl, 380), 120);
+    });
   } catch(e) {
     showErr('preorder-err', e.message);
     btn.disabled = false; btn.textContent = 'Submit Pre-Order →';
@@ -226,23 +230,73 @@ async function submitPreorder() {
 }
 
 function skipPreorder() {
-  document.getElementById('preorder-section').style.display = 'none';
-  document.getElementById('booking-done-btn').style.display = '';
+  fadeOut(document.getElementById('preorder-section'), 260, () => {
+    fadeIn(document.getElementById('booking-done-btn'), 360);
+  });
+}
+
+/* ── PANEL ANIMATION HELPERS ───────────────────────── */
+function fadeIn(el, duration = 420, translateY = 18) {
+  if (!el) return;
+  el.style.display = '';
+  el.style.opacity = '0';
+  el.style.transform = `translateY(${translateY}px)`;
+  el.style.transition = `opacity ${duration}ms cubic-bezier(.4,0,.2,1), transform ${duration}ms cubic-bezier(.4,0,.2,1)`;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    el.style.opacity = '1';
+    el.style.transform = 'none';
+    const cleanup = () => {
+      el.style.transition = '';
+      el.style.opacity = '';
+      el.style.transform = '';
+      el.removeEventListener('transitionend', cleanup);
+    };
+    el.addEventListener('transitionend', cleanup, { once: true });
+  }));
+}
+
+function fadeOut(el, duration = 280, cb) {
+  if (!el) { if (cb) cb(); return; }
+  el.style.transition = `opacity ${duration}ms cubic-bezier(.4,0,.2,1), transform ${duration}ms cubic-bezier(.4,0,.2,1)`;
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(-12px)';
+  const finish = () => {
+    el.style.display = 'none';
+    el.style.opacity = '';
+    el.style.transform = '';
+    el.style.transition = '';
+    if (cb) cb();
+  };
+  el.addEventListener('transitionend', finish, { once: true });
+  setTimeout(finish, duration + 30); // fallback if transitionend misfires
 }
 
 /* ── STEP NAVIGATION ───────────────────────────────── */
+let _stepping = false;
 function goStep(n) {
-  state.step = n;
-  document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('step-panel-' + n)?.classList.add('active');
-  document.querySelectorAll('.step-item').forEach((el, i) => {
-    el.classList.remove('active', 'done');
-    if (i + 1 < n) el.classList.add('done');
-    if (i + 1 === n) el.classList.add('active');
-  });
-  document.querySelectorAll('.step-line').forEach((el, i) => {
-    el.classList.toggle('done', i + 1 < n);
-  });
+  if (_stepping) return;
+  const prev = document.querySelector('.step-panel.active');
+  const doSwitch = () => {
+    _stepping = false;
+    state.step = n;
+    document.querySelectorAll('.step-panel').forEach(p => p.classList.remove('active', 'exiting'));
+    document.getElementById('step-panel-' + n)?.classList.add('active');
+    document.querySelectorAll('.step-item').forEach((el, i) => {
+      el.classList.remove('active', 'done');
+      if (i + 1 < n) el.classList.add('done');
+      if (i + 1 === n) el.classList.add('active');
+    });
+    document.querySelectorAll('.step-line').forEach((el, i) => {
+      el.classList.toggle('done', i + 1 < n);
+    });
+  };
+  if (prev) {
+    _stepping = true;
+    prev.classList.add('exiting');
+    setTimeout(doSwitch, 270);
+  } else {
+    doSwitch();
+  }
 }
 
 /* ── MANAGE RESERVATION ────────────────────────────── */
@@ -262,8 +316,9 @@ async function lookupReservation() {
       return;
     }
     renderLookupResult(res);
-    document.getElementById('lu-form-panel').style.display   = 'none';
-    document.getElementById('lu-result-panel').style.display = '';
+    fadeOut(document.getElementById('lu-form-panel'), 280, () => {
+      fadeIn(document.getElementById('lu-result-panel'), 440);
+    });
   } catch(e) {
     showErr('lu-err', e.message);
   } finally {
@@ -276,6 +331,7 @@ function renderLookupResult(res) {
 
   if (res.type === 'private_request') {
     const r = res.request;
+    state.lookupData = { type: 'private', id: r.id, name: r.customer_name, phone: r.phone };
     el.innerHTML = `
       <div class="lookup-card">
         <span class="lookup-type-badge private">Private Room Request</span>
@@ -288,11 +344,23 @@ function renderLookupResult(res) {
           ⏳ Your private room request is currently being reviewed by our staff.
           We will contact you shortly to confirm the details. Please keep your phone available.
         </div>
-        <div class="btn-row" style="margin-top:24px">
+
+        <div id="lu-cancel-confirm" class="cancel-confirm-panel" style="display:none">
+          <p style="color:rgba(255,255,255,.65);font-size:14px;line-height:1.75;margin-bottom:18px">
+            ⚠️ Are you sure you want to withdraw your private room request? This cannot be undone.
+          </p>
+          <div id="lu-cancel-err" class="error-msg"></div>
+          <div class="btn-row">
+            <button class="btn-back" onclick="hideCancelConfirm()">← Keep Request</button>
+            <button class="btn-danger" id="btnConfirmCancel" onclick="confirmCancelPrivateRequest()">Withdraw Request</button>
+          </div>
+        </div>
+
+        <div id="lu-action-btns" class="btn-row" style="margin-top:24px;flex-wrap:wrap;gap:10px">
           <button class="btn-back" onclick="resetLookup()">← Back to Search</button>
+          <button class="btn-danger" onclick="showCancelConfirm()" style="margin-left:auto">Withdraw Request</button>
         </div>
       </div>`;
-    state.lookupData = null;
     return;
   }
 
@@ -319,7 +387,7 @@ function renderLookupResult(res) {
       ${preOrderHtml}
 
       <div id="lu-edit-form" style="display:none;margin-top:24px">
-        <div style="font-size:14px;font-weight:600;color:var(--gold);margin-bottom:16px">Edit Your Booking</div>
+        <div style="font-size:14px;font-weight:700;color:var(--gold);margin-bottom:16px;letter-spacing:.04em">Edit Your Booking</div>
         <div class="res-form">
           <div class="form-row">
             <label class="form-label">New Name</label>
@@ -332,7 +400,7 @@ function renderLookupResult(res) {
         </div>
         <div id="lu-edit-err" class="error-msg"></div>
         <div class="btn-row">
-          <button class="btn-back" onclick="cancelEditLookup()">Cancel</button>
+          <button class="btn-back" onclick="cancelEditLookup()">← Cancel</button>
           <button class="btn-submit" onclick="submitEditLookup()">Save Changes</button>
         </div>
       </div>
@@ -341,9 +409,22 @@ function renderLookupResult(res) {
         ✅ Your reservation has been updated successfully.
       </div>
 
-      <div id="lu-action-btns" class="btn-row" style="margin-top:24px">
+      <div id="lu-cancel-confirm" class="cancel-confirm-panel" style="display:none">
+        <p style="color:rgba(255,255,255,.65);font-size:14px;line-height:1.75;margin-bottom:18px">
+          ⚠️ Are you sure you want to cancel your reservation at table
+          <strong style="color:var(--gold)">${esc(r.table_number)}</strong>? This cannot be undone.
+        </p>
+        <div id="lu-cancel-err" class="error-msg"></div>
+        <div class="btn-row">
+          <button class="btn-back" onclick="hideCancelConfirm()">← Keep My Booking</button>
+          <button class="btn-danger" id="btnConfirmCancel" onclick="confirmCancelReservation()">Confirm Cancellation</button>
+        </div>
+      </div>
+
+      <div id="lu-action-btns" class="btn-row" style="margin-top:24px;flex-wrap:wrap;gap:10px">
         <button class="btn-back" onclick="resetLookup()">← Back to Search</button>
         <button class="btn-submit" id="btnEditRes" onclick="showEditLookup()">Edit My Booking</button>
+        <button class="btn-danger" onclick="showCancelConfirm()" style="margin-left:auto">Cancel Reservation</button>
       </div>
     </div>`;
 }
@@ -352,15 +433,17 @@ function showEditLookup() {
   if (!state.lookupData) return;
   document.getElementById('lu-edit-name').value  = state.lookupData.oldName;
   document.getElementById('lu-edit-phone').value = state.lookupData.oldPhone;
-  document.getElementById('lu-edit-form').style.display    = '';
-  document.getElementById('lu-action-btns').style.display  = 'none';
   document.getElementById('lu-edit-success').style.display = 'none';
   hideErr('lu-edit-err');
+  fadeOut(document.getElementById('lu-action-btns'), 220, () => {
+    fadeIn(document.getElementById('lu-edit-form'), 360);
+  });
 }
 
 function cancelEditLookup() {
-  document.getElementById('lu-edit-form').style.display   = 'none';
-  document.getElementById('lu-action-btns').style.display = '';
+  fadeOut(document.getElementById('lu-edit-form'), 220, () => {
+    fadeIn(document.getElementById('lu-action-btns'), 360);
+  });
 }
 
 async function submitEditLookup() {
@@ -380,9 +463,11 @@ async function submitEditLookup() {
     if (phoneEl) phoneEl.textContent = newPhone;
     state.lookupData.oldName  = newName;
     state.lookupData.oldPhone = newPhone;
-    document.getElementById('lu-edit-form').style.display    = 'none';
-    document.getElementById('lu-edit-success').style.display = '';
-    document.getElementById('lu-action-btns').style.display  = '';
+    const editSuccessEl = document.getElementById('lu-edit-success');
+    fadeOut(document.getElementById('lu-edit-form'), 220, () => {
+      fadeIn(editSuccessEl, 380);
+      fadeIn(document.getElementById('lu-action-btns'), 380);
+    });
     document.getElementById('btnEditRes').textContent = 'Edit Again';
   } catch(e) {
     showErr('lu-edit-err', e.message);
@@ -390,13 +475,107 @@ async function submitEditLookup() {
 }
 
 function resetLookup() {
-  document.getElementById('lu-form-panel').style.display   = '';
-  document.getElementById('lu-result-panel').style.display = 'none';
+  const resultPanel = document.getElementById('lu-result-panel');
+  const formPanel   = document.getElementById('lu-form-panel');
   document.getElementById('lu-name').value  = '';
   document.getElementById('lu-phone').value = '';
-  document.getElementById('lu-result-content').innerHTML = '';
   state.lookupData = null;
   hideErr('lu-err');
+  const doReset = () => {
+    document.getElementById('lu-result-content').innerHTML = '';
+    resultPanel.style.display = 'none';
+    fadeIn(formPanel, 420);
+  };
+  if (resultPanel.style.display !== 'none') {
+    fadeOut(resultPanel, 280, doReset);
+  } else {
+    doReset();
+  }
+}
+
+/* ── CANCEL RESERVATION ────────────────────────────── */
+function showCancelConfirm() {
+  fadeOut(document.getElementById('lu-action-btns'), 200, () => {
+    fadeIn(document.getElementById('lu-cancel-confirm'), 360);
+  });
+}
+
+function hideCancelConfirm() {
+  fadeOut(document.getElementById('lu-cancel-confirm'), 200, () => {
+    const actionBtns = document.getElementById('lu-action-btns');
+    document.getElementById('lu-cancel-err')?.classList.remove('show');
+    fadeIn(actionBtns, 360);
+  });
+}
+
+async function confirmCancelReservation() {
+  if (!state.lookupData) return;
+  const btn = document.getElementById('btnConfirmCancel');
+  if (btn) { btn.disabled = true; btn.textContent = 'Cancelling…'; }
+  hideErr('lu-cancel-err');
+  try {
+    await api('customer_cancel_reservation', {
+      id:            state.lookupData.id,
+      customer_name: state.lookupData.oldName,
+      phone:         state.lookupData.oldPhone,
+    });
+    state.lookupData = null;
+    const el = document.getElementById('lu-result-content');
+    if (el) {
+      fadeOut(el.querySelector('.lookup-card'), 260, () => {
+        el.innerHTML = `
+          <div class="lookup-card" style="text-align:center;padding:52px 32px">
+            <div style="font-size:60px;margin-bottom:20px;filter:drop-shadow(0 0 20px rgba(201,168,76,.3))">✅</div>
+            <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:26px;color:var(--white);font-weight:300;margin-bottom:12px">Reservation Cancelled</h3>
+            <p style="color:rgba(255,255,255,.55);font-size:14px;line-height:1.85;max-width:360px;margin:0 auto">
+              Your reservation has been successfully cancelled. We hope to welcome you again soon.
+            </p>
+            <div class="btn-row" style="justify-content:center;margin-top:32px">
+              <button class="btn-submit" onclick="resetLookup()">Back to Search</button>
+            </div>
+          </div>`;
+        fadeIn(el.querySelector('.lookup-card'), 420);
+      });
+    }
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirm Cancellation'; }
+    showErr('lu-cancel-err', e.message);
+  }
+}
+
+async function confirmCancelPrivateRequest() {
+  if (!state.lookupData) return;
+  const btn = document.getElementById('btnConfirmCancel');
+  if (btn) { btn.disabled = true; btn.textContent = 'Withdrawing…'; }
+  hideErr('lu-cancel-err');
+  try {
+    await api('customer_cancel_private_request', {
+      id:            state.lookupData.id,
+      customer_name: state.lookupData.name,
+      phone:         state.lookupData.phone,
+    });
+    state.lookupData = null;
+    const el = document.getElementById('lu-result-content');
+    if (el) {
+      fadeOut(el.querySelector('.lookup-card'), 260, () => {
+        el.innerHTML = `
+          <div class="lookup-card" style="text-align:center;padding:52px 32px">
+            <div style="font-size:60px;margin-bottom:20px;filter:drop-shadow(0 0 20px rgba(201,168,76,.3))">✅</div>
+            <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:26px;color:var(--white);font-weight:300;margin-bottom:12px">Request Withdrawn</h3>
+            <p style="color:rgba(255,255,255,.55);font-size:14px;line-height:1.85;max-width:360px;margin:0 auto">
+              Your private room request has been withdrawn. We hope to welcome you again soon.
+            </p>
+            <div class="btn-row" style="justify-content:center;margin-top:32px">
+              <button class="btn-submit" onclick="resetLookup()">Back to Search</button>
+            </div>
+          </div>`;
+        fadeIn(el.querySelector('.lookup-card'), 420);
+      });
+    }
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Withdraw Request'; }
+    showErr('lu-cancel-err', e.message);
+  }
 }
 
 /* ── HELPERS ───────────────────────────────────────── */
@@ -432,4 +611,109 @@ function showErr(id, msg) {
 function hideErr(id) {
   const el = document.getElementById(id);
   if (el) el.classList.remove('show');
+}
+
+/* ── VISUAL EFFECTS ────────────────────────────────── */
+function initVisualEffects() {
+  initNavScroll();
+  initScrollReveal();
+  initCardTilt();
+  initStatCounters();
+  initHeroCursor();
+}
+
+function initNavScroll() {
+  const nav = document.getElementById('mainNav');
+  if (!nav) return;
+  window.addEventListener('scroll', () => {
+    nav.classList.toggle('scrolled', window.scrollY > 72);
+  }, { passive: true });
+}
+
+function initScrollReveal() {
+  const els = document.querySelectorAll('.reveal');
+  if (!els.length) return;
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) { e.target.classList.add('revealed'); obs.unobserve(e.target); }
+    });
+  }, { threshold: 0.14 });
+  els.forEach(el => obs.observe(el));
+
+  /* stagger menu cards */
+  document.querySelectorAll('.menu-card').forEach((card, i) => {
+    card.classList.add('reveal');
+    card.style.transitionDelay = `${i * 0.1}s`;
+    obs.observe(card);
+  });
+}
+
+function initCardTilt() {
+  const applyTilt = (selector, maxRY, maxRX) => {
+    document.querySelectorAll(selector).forEach(card => {
+      card.addEventListener('mouseenter', () => {
+        card.style.transition = 'transform .1s ease, box-shadow .35s cubic-bezier(.4,0,.2,1)';
+      });
+      card.addEventListener('mousemove', e => {
+        const r  = card.getBoundingClientRect();
+        const x  = (e.clientX - r.left - r.width  / 2) / (r.width  / 2);
+        const y  = (e.clientY - r.top  - r.height / 2) / (r.height / 2);
+        card.style.setProperty('--card-ry', `${x * maxRY}deg`);
+        card.style.setProperty('--card-rx', `${-y * maxRX}deg`);
+        card.style.setProperty('--card-tz', '8px');
+        /* spotlight follow on table cards */
+        const pct = ((e.clientX - r.left) / r.width * 100).toFixed(1);
+        const pct2 = ((e.clientY - r.top)  / r.height * 100).toFixed(1);
+        card.style.setProperty('--mx', `${pct}%`);
+        card.style.setProperty('--my', `${pct2}%`);
+      });
+      card.addEventListener('mouseleave', () => {
+        card.style.transition = 'transform .55s cubic-bezier(.4,0,.2,1), box-shadow .35s cubic-bezier(.4,0,.2,1)';
+        card.style.setProperty('--card-ry', '0deg');
+        card.style.setProperty('--card-rx', '0deg');
+        card.style.setProperty('--card-tz', '0px');
+      });
+    });
+  };
+  applyTilt('.menu-card',       11, 7);
+  applyTilt('.table-type-card',  9, 5);
+}
+
+function initStatCounters() {
+  const items = document.querySelectorAll('.stat-num[data-count]');
+  if (!items.length) return;
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (!e.isIntersecting) return;
+      const el     = e.target;
+      const target = el.dataset.count;
+      const suffix = target.replace(/[0-9]/g, '');
+      const num    = parseInt(target, 10);
+      el.textContent = '0' + suffix;
+      const dur = 1800;
+      const start = performance.now();
+      function tick(now) {
+        const t = Math.min((now - start) / dur, 1);
+        const ease = 1 - Math.pow(1 - t, 3);
+        el.textContent = Math.round(ease * num) + suffix;
+        if (t < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+      obs.unobserve(el);
+    });
+  }, { threshold: 0.6 });
+  items.forEach(el => obs.observe(el));
+}
+
+function initHeroCursor() {
+  const hero  = document.querySelector('.hero');
+  const glow  = document.getElementById('heroCursorGlow');
+  if (!hero || !glow) return;
+  hero.addEventListener('mousemove', e => {
+    const r = hero.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width  * 100).toFixed(1);
+    const y = ((e.clientY - r.top)  / r.height * 100).toFixed(1);
+    glow.style.setProperty('--mx', `${x}%`);
+    glow.style.setProperty('--my', `${y}%`);
+  }, { passive: true });
 }

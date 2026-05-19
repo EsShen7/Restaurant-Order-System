@@ -3,6 +3,12 @@ session_start();
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
+set_exception_handler(function (Throwable $e) {
+    if (!headers_sent()) http_response_code(500);
+    echo json_encode(['success' => false, 'error' => 'Server error: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE);
+    exit;
+});
+
 require_once __DIR__ . '/config.php';
 
 $body   = json_decode(file_get_contents('php://input'), true) ?? [];
@@ -36,7 +42,9 @@ switch ($action) {
     case 'get_menu':                     getMenu();                    break;
     case 'add_pre_order':               addPreOrder();                break;
     case 'find_customer_reservation':   findCustomerReservation();    break;
-    case 'customer_update_reservation': customerUpdateReservation();  break;
+    case 'customer_update_reservation':     customerUpdateReservation();      break;
+    case 'customer_cancel_reservation':     customerCancelReservation();      break;
+    case 'customer_cancel_private_request': customerCancelPrivateRequest();   break;
 
     // Auth
     case 'login':       handleLogin();   break;
@@ -855,6 +863,56 @@ function customerUpdateReservation() {
         $id);
 
     ok(['message' => 'Your reservation has been updated successfully.']);
+}
+
+function customerCancelReservation() {
+    global $data;
+    $id    = (int)($data['id']            ?? 0);
+    $name  = trim($data['customer_name']  ?? '');
+    $phone = trim($data['phone']          ?? '');
+    if (!$id || !$name || !$phone) err('Missing required fields.');
+
+    $db   = getDB();
+    $stmt = $db->prepare(
+        "SELECT r.*, dt.table_number FROM reservations r
+         JOIN dining_tables dt ON dt.id = r.table_id
+         WHERE r.id=? AND r.status='confirmed'"
+    );
+    $stmt->execute([$id]);
+    $res = $stmt->fetch();
+    if (!$res) err('Reservation not found or already cancelled.');
+    if ($res['customer_name'] !== $name || $res['phone'] !== $phone)
+        err('Your credentials do not match this reservation.');
+
+    $db->prepare("UPDATE reservations SET status='cancelled' WHERE id=?")->execute([$id]);
+
+    broadcastNotification('customer_cancelled',
+        "Table {$res['table_number']} · Guest {$name} cancelled their reservation.", $id);
+
+    ok(['message' => 'Your reservation has been successfully cancelled.']);
+}
+
+function customerCancelPrivateRequest() {
+    global $data;
+    $id    = (int)($data['id']            ?? 0);
+    $name  = trim($data['customer_name']  ?? '');
+    $phone = trim($data['phone']          ?? '');
+    if (!$id || !$name || !$phone) err('Missing required fields.');
+
+    $db   = getDB();
+    $stmt = $db->prepare("SELECT * FROM private_room_requests WHERE id=? AND status='pending'");
+    $stmt->execute([$id]);
+    $req = $stmt->fetch();
+    if (!$req) err('Request not found or already processed.');
+    if ($req['customer_name'] !== $name || $req['phone'] !== $phone)
+        err('Your credentials do not match this request.');
+
+    $db->prepare("UPDATE private_room_requests SET status='cancelled' WHERE id=?")->execute([$id]);
+
+    broadcastNotification('customer_cancelled',
+        "Private room request from {$name} (phone: {$phone}) was cancelled by the guest.", $id);
+
+    ok(['message' => 'Your private room request has been successfully cancelled.']);
 }
 
 /* ============================================================

@@ -10,3 +10,10 @@ Thumbs.db
 
 # Project specific
 .claude/
+
+# Node
+node_modules/
+package-lock.json
+
+# Database credentials
+.env

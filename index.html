@@ -4,12 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cloud Pavilion · Fine Chinese Cuisine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;0,700;1,300;1,400&family=Lato:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/customer.css">
 </head>
 <body>
 
-<!-- ── NAV ──────────────────────────────────────── -->
-<nav class="nav">
+<!-- ── NAV ──────────────────────────────────────────── -->
+<nav class="nav" id="mainNav">
   <a class="nav-logo" href="#">Cloud Pavilion</a>
   <div class="nav-links">
     <a href="#about">About</a>
@@ -19,8 +22,15 @@
   </div>
 </nav>
 
-<!-- ── HERO ─────────────────────────────────────── -->
+<!-- ── HERO ─────────────────────────────────────────── -->
 <section class="hero" id="home">
+  <div class="hero-orbs" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+  <div class="hero-particles" aria-hidden="true"></div>
+  <div class="hero-cursor-glow" id="heroCursorGlow"></div>
   <div class="hero-content">
     <span class="hero-tag">Elevated Chinese Cuisine · Est. 2012</span>
     <h1><strong>Cloud Pavilion</strong></h1>
@@ -37,40 +47,42 @@
   </div>
 </section>
 
-<!-- ── ABOUT ─────────────────────────────────────── -->
+<!-- ── ABOUT ─────────────────────────────────────────── -->
 <section id="about">
   <div class="about-grid">
-    <div class="about-img-placeholder">
-      <div class="about-img-char">✦</div>
-      <div class="about-img-text">ELEGANCE · TRADITION</div>
+    <div class="about-img-wrap reveal">
+      <div class="about-img-placeholder">
+        <div class="about-img-char">✦</div>
+        <div class="about-img-text">ELEGANCE · TRADITION</div>
+      </div>
     </div>
     <div class="about-text">
-      <h2>The Art of <em>Tradition</em> &amp; Innovation</h2>
-      <p>
+      <h2 class="reveal delay-1">The Art of <em>Tradition</em> &amp; Innovation</h2>
+      <p class="reveal delay-2">
         Located in the heart of the city, Cloud Pavilion is a premier Chinese restaurant
         where time-honored culinary heritage meets modern creativity. Since opening in 2012,
         we have remained devoted to excellence in both ingredients and technique.
       </p>
-      <p>
+      <p class="reveal delay-2">
         Our head chef brings over two decades of experience, having trained under celebrated
         masters in Beijing, Suzhou, and Guangzhou. The result is a style that fuses Cantonese
         precision, Suzhou elegance, and Beijing grandeur into something uniquely our own.
       </p>
-      <p>
+      <p class="reveal delay-2">
         Every dish is an act of artistry. We believe that exceptional food engages all the
         senses — sight, aroma, texture, and taste — transforming a meal into a memory.
       </p>
-      <div class="about-stats">
+      <div class="about-stats reveal delay-3">
         <div class="stat-item">
-          <div class="stat-num">13+</div>
+          <div class="stat-num" data-count="13+">13+</div>
           <div class="stat-label">Years of Excellence</div>
         </div>
         <div class="stat-item">
-          <div class="stat-num">60+</div>
+          <div class="stat-num" data-count="60+">60+</div>
           <div class="stat-label">Signature Dishes</div>
         </div>
         <div class="stat-item">
-          <div class="stat-num">98%</div>
+          <div class="stat-num" data-count="98%">98%</div>
           <div class="stat-label">Guest Satisfaction</div>
         </div>
       </div>
@@ -78,11 +90,11 @@
   </div>
 </section>
 
-<!-- ── MENU ──────────────────────────────────────── -->
+<!-- ── MENU ──────────────────────────────────────────── -->
 <section id="menu">
-  <div class="section-tag">SIGNATURE DISHES</div>
-  <h2 class="section-title">Our <strong>Signature Menu</strong></h2>
-  <div class="section-line"><span>✦</span></div>
+  <div class="section-tag reveal">SIGNATURE DISHES</div>
+  <h2 class="section-title reveal delay-1">Our <strong>Signature Menu</strong></h2>
+  <div class="section-line reveal delay-2"><span>✦</span></div>
   <div class="menu-grid">
     <div class="menu-card">
       <div class="menu-card-img">🦞</div>
@@ -135,11 +147,11 @@
   </div>
 </section>
 
-<!-- ── RESERVATION ───────────────────────────────── -->
+<!-- ── RESERVATION ───────────────────────────────────── -->
 <section id="reservation">
-  <div class="section-tag">TABLE RESERVATION</div>
-  <h2 class="section-title">Book <strong>Your Table</strong></h2>
-  <div class="section-line"><span>✦</span></div>
+  <div class="section-tag reveal">TABLE RESERVATION</div>
+  <h2 class="section-title reveal delay-1">Book <strong>Your Table</strong></h2>
+  <div class="section-line reveal delay-2"><span>✦</span></div>
 
   <div class="res-container">
     <!-- Step Indicator -->
@@ -168,31 +180,31 @@
           <div class="type-name">Standard Table</div>
           <div class="type-cap">Ideal for 1–2 guests</div>
           <span class="avail-badge"><span class="avail-dot"></span>Loading…</span>
-          <div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,.4)">Available: <span class="avail-num">—</span></div>
+          <div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,.38)">Available: <span class="avail-num">—</span></div>
         </div>
         <div class="table-type-card" id="card-medium" onclick="selectTable('medium')">
           <div class="type-icon">🍜</div>
           <div class="type-name">Medium Table</div>
           <div class="type-cap">Ideal for 3–4 guests</div>
           <span class="avail-badge"><span class="avail-dot"></span>Loading…</span>
-          <div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,.4)">Available: <span class="avail-num">—</span></div>
+          <div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,.38)">Available: <span class="avail-num">—</span></div>
         </div>
         <div class="table-type-card" id="card-large" onclick="selectTable('large')">
           <div class="type-icon">🍽️</div>
           <div class="type-name">Large Table</div>
           <div class="type-cap">Ideal for 5–8 guests</div>
           <span class="avail-badge"><span class="avail-dot"></span>Loading…</span>
-          <div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,.4)">Available: <span class="avail-num">—</span></div>
+          <div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,.38)">Available: <span class="avail-num">—</span></div>
         </div>
         <div class="table-type-card" id="card-private" onclick="selectTable('private')">
           <div class="type-icon">🏮</div>
           <div class="type-name">Private Room</div>
           <div class="type-cap">6+ guests · Exclusive space</div>
           <span class="avail-badge"><span class="avail-dot"></span>Loading…</span>
-          <div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,.4)">Available: <span class="avail-num">—</span></div>
+          <div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,.38)">Available: <span class="avail-num">—</span></div>
         </div>
       </div>
-      <p style="color:rgba(255,255,255,.45);font-size:13px;margin-bottom:16px">
+      <p style="color:rgba(255,255,255,.38);font-size:13px;margin-bottom:16px">
         ✦ Private room bookings require staff confirmation. We will contact you after submission.
       </p>
       <div id="step1-err" class="error-msg"></div>
@@ -203,7 +215,7 @@
 
     <!-- Step 2: Contact info -->
     <div class="step-panel" id="step-panel-2">
-      <p style="color:rgba(255,255,255,.6);font-size:14px;margin-bottom:24px">
+      <p style="color:rgba(255,255,255,.5);font-size:14px;margin-bottom:26px">
         Selected: <strong id="selected-type-display" style="color:var(--gold)">—</strong>
       </p>
       <div class="res-form">
@@ -234,7 +246,7 @@
 
       <!-- Pre-order (regular tables only) -->
       <div id="preorder-section" style="display:none" class="preorder-section">
-        <h4 class="preorder-title">Pre-Order Dishes <span style="font-size:13px;color:rgba(255,255,255,.35);font-weight:400">— Optional</span></h4>
+        <h4 class="preorder-title">Pre-Order Dishes <span style="font-size:13px;color:rgba(255,255,255,.3);font-weight:400">— Optional</span></h4>
         <p class="preorder-sub">Select dishes ahead of your visit and our kitchen will have them ready for you.</p>
         <div class="preorder-grid" id="preorder-grid"></div>
         <div id="preorder-err" class="error-msg"></div>
@@ -257,16 +269,16 @@
   </div>
 </section>
 
-<!-- ── MANAGE RESERVATION ───────────────────────────── -->
+<!-- ── MANAGE RESERVATION ────────────────────────────── -->
 <section id="manage">
-  <div class="section-tag">MANAGE YOUR BOOKING</div>
-  <h2 class="section-title">Find &amp; <strong>Modify</strong> Your Reservation</h2>
-  <div class="section-line"><span>✦</span></div>
+  <div class="section-tag reveal">MANAGE YOUR BOOKING</div>
+  <h2 class="section-title reveal delay-1">Find &amp; <strong>Modify</strong> Your Reservation</h2>
+  <div class="section-line reveal delay-2"><span>✦</span></div>
 
   <div class="res-container">
     <!-- Lookup form -->
     <div id="lu-form-panel">
-      <p style="text-align:center;color:rgba(255,255,255,.5);font-size:14px;margin-bottom:32px">
+      <p style="text-align:center;color:rgba(255,255,255,.45);font-size:14px;margin-bottom:34px">
         Enter your name and phone number exactly as provided when you made your reservation.
       </p>
       <div class="res-form">
@@ -292,7 +304,7 @@
   </div>
 </section>
 
-<!-- ── FOOTER ─────────────────────────────────────── -->
+<!-- ── FOOTER ─────────────────────────────────────────── -->
 <footer>
   <div class="footer-logo">Cloud Pavilion</div>
   <div class="footer-links">
