@@ -813,7 +813,7 @@ Respond with ONLY this JSON format (no other text, no markdown):
     "table_number": "",
     "search_text": ""
   },
-  "summary": "A brief Chinese or English summary of what was found, matching the user's language",
+  "summary": "A brief English summary of what was found",
   "suggestion": "A helpful follow-up suggestion, or empty string"
 }
 
@@ -823,7 +823,7 @@ Rules:
 - search_employee: staff search only, finding employee info
 - general_status: overview of restaurant
 - Fill ONLY the params you have info for, leave others empty
-- summary should be in the user's language (Chinese if they asked in Chinese)
+- Always respond in English regardless of the user's language
 PROMPT;
 
     $response = callAI($prompt);

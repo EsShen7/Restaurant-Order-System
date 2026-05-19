@@ -611,8 +611,7 @@ function renderCustomerAIResult(res, query) {
   if (res.type === 'availability' && res.stats?.length) {
     html += `<div class="ai-result-section">`;
     const names = { small: 'Standard', medium: 'Medium', large: 'Large', private: 'Private Room' };
-    const typeNames = { small: '小桌', medium: '中桌', large: '大桌', private: '包间' };
-    html += `<div class="ai-result-label">📊 当前空位</div>
+    html += `<div class="ai-result-label">📊 Current Availability</div>
       <div class="ai-res-grid">
         ${res.stats.map(s => {
           const avail = parseInt(s.available);
@@ -622,7 +621,7 @@ function renderCustomerAIResult(res, query) {
           <div class="ai-avail-card">
             <div class="ai-avail-type">${names[s.type] || s.type}</div>
             <div class="ai-avail-number${avail === 0 ? ' none' : ''}">${avail}</div>
-            <div class="ai-avail-label">共 ${total} ${typeNames[s.type] || ''} · ${avail} 空</div>
+            <div class="ai-avail-label">${avail} / ${total} available</div>
             <div class="progress" style="background:rgba(255,255,255,.08)">
               <div class="progress-fill" style="width:${pct}%"></div>
             </div>
@@ -630,12 +629,12 @@ function renderCustomerAIResult(res, query) {
         }).join('')}
       </div>`;
     if (res.available_tables?.length) {
-      html += `<div class="ai-result-label" style="margin-top:16px;font-size:14px">🪑 可用的桌位</div>
+      html += `<div class="ai-result-label" style="margin-top:16px;font-size:14px">🪑 Available Tables</div>
         <div class="ai-res-table-list">
           ${res.available_tables.map(t =>
             `<div class="ai-res-table-row">
               <span class="table-num">${esc(t.table_number)}</span>
-              <span class="table-info">${names[t.type] || t.type} · ${t.min_capacity}–${t.max_capacity} 位</span>
+              <span class="table-info">${names[t.type] || t.type} · ${t.min_capacity}–${t.max_capacity} guests</span>
             </div>`
           ).join('')}
         </div>`;
@@ -643,35 +642,35 @@ function renderCustomerAIResult(res, query) {
     html += `</div>`;
   } else if (res.type === 'reservations' && res.results?.length) {
     html += `<div class="ai-result-section">
-      <div class="ai-result-label">📋 找到 ${res.count} 条预订</div>
+      <div class="ai-result-label">📋 Found ${res.count} reservation(s)</div>
       ${res.results.map(r => `
         <div class="ai-res-card">
           <div class="ai-res-table">${esc(r.table_number)} <span class="tag">${esc(r.table_type)}</span></div>
           <div class="ai-res-name">${esc(r.customer_name)} · ${esc(r.phone)}</div>
-          ${r.party_size ? `<div class="ai-res-detail">${r.party_size} 位客人</div>` : ''}
+          ${r.party_size ? `<div class="ai-res-detail">${r.party_size} guests</div>` : ''}
         </div>
       `).join('')}
     </div>`;
   } else if (res.type === 'tables' && res.results?.length) {
     html += `<div class="ai-result-section">
-      <div class="ai-result-label">🪑 找到 ${res.count} 张桌</div>
+      <div class="ai-result-label">🪑 Found ${res.count} table(s)</div>
       <div class="ai-res-table-list">
         ${res.results.map(t => `
           <div class="ai-res-table-row">
             <span class="table-num">${esc(t.table_number)}</span>
-            <span class="table-info">${esc(t.type)} · ${t.min_capacity}–${t.max_capacity} 位</span>
+            <span class="table-info">${esc(t.type)} · ${t.min_capacity}–${t.max_capacity} guests</span>
           </div>
         `).join('')}
       </div>
     </div>`;
   } else if (res.type === 'employees' && res.results?.length) {
     html += `<div class="ai-result-section">
-      <div class="ai-result-label">👥 找到 ${res.count} 名员工</div>
+      <div class="ai-result-label">👥 Found ${res.count} employee(s)</div>
       <div class="ai-res-table-list">
         ${res.results.map(e => `
           <div class="ai-res-table-row">
             <span class="table-num">${esc(e.full_name)}</span>
-            <span class="table-info">${esc(e.username)} · ${e.is_active ? '在职' : '已禁用'}</span>
+            <span class="table-info">${esc(e.username)} · ${e.is_active ? 'Active' : 'Disabled'}</span>
           </div>
         `).join('')}
       </div>
@@ -680,9 +679,9 @@ function renderCustomerAIResult(res, query) {
 
   if (!html) {
     if (res.results && res.results.length === 0) {
-      html = `<div class="ai-customer-empty">未找到结果，换个说法试试</div>`;
+      html = `<div class="ai-customer-empty">No results found. Try rephrasing your question.</div>`;
     } else {
-      html = `<div class="ai-customer-empty">没有找到"${esc(query)}"的相关信息，试试询问空位或查询预订</div>`;
+      html = `<div class="ai-customer-empty">No info found for "${esc(query)}". Try asking about availability or reservations.</div>`;
     }
   }
 
