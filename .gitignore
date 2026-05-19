@@ -18,5 +18,3 @@ package-lock.json
 # Database credentials
 .env
 
-# AI API keys (contains sensitive API tokens)
-ai_config.php
