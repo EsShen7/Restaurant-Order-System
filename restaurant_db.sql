@@ -193,3 +193,85 @@ SELECT
     oi.subtotal
 FROM order_items oi
 JOIN menu_items mi ON oi.item_id = mi.item_id;
+
+-- ════════════════════════════════════════════════════════
+-- V2: Multi-Restaurant & Recommendation Tables
+-- ════════════════════════════════════════════════════════
+
+CREATE TABLE IF NOT EXISTS restaurants (
+    id             INT AUTO_INCREMENT PRIMARY KEY,
+    name           VARCHAR(200) NOT NULL,
+    name_cn        VARCHAR(200),
+    description    TEXT,
+    address        VARCHAR(500),
+    district       VARCHAR(100),
+    latitude       DECIMAL(10,8),
+    longitude      DECIMAL(11,8),
+    phone          VARCHAR(20),
+    opening_hours  VARCHAR(200),
+    price_range    VARCHAR(20) DEFAULT '$$',
+    avg_rating     DECIMAL(2,1) DEFAULT 0.0,
+    review_count   INT DEFAULT 0,
+    image_url      VARCHAR(500),
+    is_active      TINYINT(1) DEFAULT 1,
+    created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS restaurant_cuisines (
+    id   INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS restaurant_cuisine_map (
+    restaurant_id INT NOT NULL,
+    cuisine_id    INT NOT NULL,
+    PRIMARY KEY (restaurant_id, cuisine_id),
+    FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE,
+    FOREIGN KEY (cuisine_id)    REFERENCES restaurant_cuisines(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS reviews (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    restaurant_id   INT NOT NULL,
+    user_id         INT DEFAULT NULL,
+    customer_name   VARCHAR(100),
+    rating          TINYINT NOT NULL,
+    comment         TEXT,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id)       REFERENCES users(user_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+    id                   INT AUTO_INCREMENT PRIMARY KEY,
+    user_id              INT NOT NULL UNIQUE,
+    preferred_cuisines   TEXT,
+    price_min            DECIMAL(8,2),
+    price_max            DECIMAL(8,2),
+    preferred_districts  TEXT,
+    dietary_restrictions TEXT,
+    created_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS user_favorites (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    user_id         INT NOT NULL,
+    restaurant_id   INT NOT NULL,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY (user_id, restaurant_id),
+    FOREIGN KEY (user_id)       REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (restaurant_id) REFERENCES restaurants(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ai_recommendation_logs (
+    id               INT AUTO_INCREMENT PRIMARY KEY,
+    user_id          INT DEFAULT NULL,
+    session_id       VARCHAR(64),
+    query_text       TEXT,
+    recommendations  JSON,
+    user_feedback    VARCHAR(50),
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

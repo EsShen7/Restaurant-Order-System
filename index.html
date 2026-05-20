@@ -3,24 +3,23 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cloud Pavilion · Fine Chinese Cuisine</title>
+  <title>CityEats · AI Restaurant Discovery</title>
   <link rel="stylesheet" href="css/customer.css">
-  <script src="js/customer.js?v=2"></script>
+  <script src="js/customer.js?v=3"></script>
 </head>
 <body>
 
-<!-- ── NAV ──────────────────────────────────────────── -->
 <nav class="nav" id="mainNav">
-  <a class="nav-logo" href="#">Cloud Pavilion</a>
+  <a class="nav-logo" href="#">CityEats</a>
   <div class="nav-links">
-    <a href="#about">About</a>
-    <a href="#menu">Menu</a>
-    <a href="#manage" id="navManageBtn">Manage Booking</a>
-    <a href="#reservation" class="nav-btn" id="navBookBtn">Reserve a Table</a>
+    <a href="#discover">Discover</a>
+    <a href="#restaurants">All Restaurants</a>
+    <a href="#manage" id="navManageBtn">My Booking</a>
+    <a href="#reservation" class="nav-btn" id="navBookBtn">Book a Table</a>
+    <a href="login.html" style="font-size:13px;color:rgba(255,255,255,.5)">Staff Portal</a>
   </div>
 </nav>
 
-<!-- ── HERO ─────────────────────────────────────────── -->
 <section class="hero" id="home">
   <div class="hero-orbs" aria-hidden="true">
     <div class="orb orb-1"></div>
@@ -30,129 +29,88 @@
   <div class="hero-particles" aria-hidden="true"></div>
   <div class="hero-cursor-glow" id="heroCursorGlow"></div>
   <div class="hero-content">
-    <span class="hero-tag">Elevated Chinese Cuisine · Est. 2012</span>
-    <h1><strong>Cloud Pavilion</strong></h1>
-    <p class="hero-sub">Fine Chinese Cuisine</p>
-    <p class="hero-desc">
-      Rooted in tradition, driven by innovation — we source only the finest seasonal
-      ingredients to create a dining experience that lingers long after the last bite.
-    </p>
-    <div class="hero-ornament">✦</div>
-    <button class="btn-primary" id="startBtn">
-      <span>Reserve a Table</span>
-      <span>→</span>
-    </button>
-  </div>
-</section>
-
-<!-- ── ABOUT ─────────────────────────────────────────── -->
-<section id="about">
-  <div class="about-grid">
-    <div class="about-img-wrap reveal">
-      <div class="about-img-placeholder">
-        <div class="about-img-char">✦</div>
-        <div class="about-img-text">ELEGANCE · TRADITION</div>
-      </div>
+    <span class="hero-tag">AI-Powered · Discover the Best Food in Town</span>
+    <h1><strong>What's for Dinner?</strong></h1>
+    <p class="hero-sub">Let AI recommend the best restaurants for you</p>
+    <div class="hero-search">
+      <input class="hero-search-input" id="heroSearchInput" type="text"
+             placeholder="Cuisine, restaurant name, or craving…"
+             onkeydown="if(event.key==='Enter') doHeroSearch()">
+      <button class="btn-primary" onclick="doHeroSearch()" style="padding:14px 36px;border-radius:0 50px 50px 0">
+        <span>AI Search</span>
+        <span>→</span>
+      </button>
     </div>
-    <div class="about-text">
-      <h2 class="reveal delay-1">The Art of <em>Tradition</em> &amp; Innovation</h2>
-      <p class="reveal delay-2">
-        Located in the heart of the city, Cloud Pavilion is a premier Chinese restaurant
-        where time-honored culinary heritage meets modern creativity. Since opening in 2012,
-        we have remained devoted to excellence in both ingredients and technique.
-      </p>
-      <p class="reveal delay-2">
-        Our head chef brings over two decades of experience, having trained under celebrated
-        masters in Beijing, Suzhou, and Guangzhou. The result is a style that fuses Cantonese
-        precision, Suzhou elegance, and Beijing grandeur into something uniquely our own.
-      </p>
-      <p class="reveal delay-2">
-        Every dish is an act of artistry. We believe that exceptional food engages all the
-        senses — sight, aroma, texture, and taste — transforming a meal into a memory.
-      </p>
-      <div class="about-stats reveal delay-3">
-        <div class="stat-item">
-          <div class="stat-num" data-count="13+">13+</div>
-          <div class="stat-label">Years of Excellence</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-num" data-count="60+">60+</div>
-          <div class="stat-label">Signature Dishes</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-num" data-count="98%">98%</div>
-          <div class="stat-label">Guest Satisfaction</div>
-        </div>
-      </div>
+    <div class="hero-tags" id="heroQuickTags">
+      <span class="hero-tag-btn" onclick="searchCuisine('Sichuan')">🌶️ Sichuan</span>
+      <span class="hero-tag-btn" onclick="searchCuisine('Cantonese')">🥟 Cantonese</span>
+      <span class="hero-tag-btn" onclick="searchCuisine('Japanese')">🍣 Japanese</span>
+      <span class="hero-tag-btn" onclick="searchCuisine('Hotpot')">🍲 Hotpot</span>
+      <span class="hero-tag-btn" onclick="searchCuisine('Western')">🍝 Western</span>
+      <span class="hero-tag-btn" onclick="searchCuisine('BBQ')">🍖 BBQ</span>
     </div>
   </div>
 </section>
 
-<!-- ── MENU ──────────────────────────────────────────── -->
-<section id="menu">
-  <div class="section-tag reveal">SIGNATURE DISHES</div>
-  <h2 class="section-title reveal delay-1">Our <strong>Signature Menu</strong></h2>
+<section id="discover">
+  <div class="section-tag reveal">AI RECOMMENDS</div>
+  <h2 class="section-title reveal delay-1"><strong>Picks for You</strong></h2>
   <div class="section-line reveal delay-2"><span>✦</span></div>
-  <div class="menu-grid">
-    <div class="menu-card">
-      <div class="menu-card-img">🦞</div>
-      <div class="menu-card-body">
-        <h3>Crispy Boston Lobster</h3>
-        <p>Prime Boston lobster marinated for 12 hours in our signature sauce — golden-crisp outside, silky and sweet within.</p>
-        <span class="menu-tag">Chef's Recommendation</span>
-      </div>
-    </div>
-    <div class="menu-card">
-      <div class="menu-card-img">🫕</div>
-      <div class="menu-card-body">
-        <h3>Buddha Jumps Over the Wall</h3>
-        <p>Abalone, sea cucumber, fish maw, and 18 premium ingredients slow-simmered for 48 hours into a sublime, collagen-rich broth.</p>
-        <span class="menu-tag">House Treasure</span>
-      </div>
-    </div>
-    <div class="menu-card">
-      <div class="menu-card-img">🦆</div>
-      <div class="menu-card-body">
-        <h3>Osmanthus Honey Roast Duck</h3>
-        <p>A century-old Beijing hanging-oven technique elevated with house-made osmanthus honey glaze — crackling skin, tender flesh.</p>
-        <span class="menu-tag">Signature Classic</span>
-      </div>
-    </div>
-    <div class="menu-card">
-      <div class="menu-card-img">🥟</div>
-      <div class="menu-card-body">
-        <h3>Crystal Prawn Dumplings</h3>
-        <p>Wild river prawns wrapped in paper-thin crystal skin — a jewel of Cantonese dim sum craftsmanship.</p>
-        <span class="menu-tag">Dim Sum Gem</span>
-      </div>
-    </div>
-    <div class="menu-card">
-      <div class="menu-card-img">🐟</div>
-      <div class="menu-card-body">
-        <h3>Steamed Songjiang Perch</h3>
-        <p>Live Taihu Lake perch, steamed to order and finished with aged soy, fresh ginger, and sizzling oil.</p>
-        <span class="menu-tag">Seasonal Delicacy</span>
-      </div>
-    </div>
-    <div class="menu-card">
-      <div class="menu-card-img">🍮</div>
-      <div class="menu-card-body">
-        <h3>Osmanthus Glutinous Rice Lotus</h3>
-        <p>Fresh lotus root stuffed with round glutinous rice, simmered in osmanthus honey until meltingly soft and fragrant.</p>
-        <span class="menu-tag">Suzhou Dessert</span>
-      </div>
-    </div>
+  <div id="discover-loading" style="text-align:center;padding:60px 0;color:rgba(255,255,255,.3)">
+    <div style="font-size:32px;margin-bottom:16px">✨</div>
+    AI is analyzing the city's best restaurants…
   </div>
+  <div class="restaurant-grid" id="discover-grid"></div>
 </section>
 
-<!-- ── RESERVATION ───────────────────────────────────── -->
+<section id="restaurants">
+  <div class="section-tag reveal">CITY GUIDE</div>
+  <h2 class="section-title reveal delay-1">All <strong>Restaurants</strong></h2>
+  <div class="section-line reveal delay-2"><span>✦</span></div>
+
+  <div class="filter-bar reveal delay-3">
+    <select class="filter-select" id="filter-cuisine" onchange="applyFilters()">
+      <option value="">All Cuisines</option>
+    </select>
+    <select class="filter-select" id="filter-price" onchange="applyFilters()">
+      <option value="">All Prices</option>
+      <option value="$">$ Budget</option>
+      <option value="$$">$$ Moderate</option>
+      <option value="$$$">$$$ Upscale</option>
+      <option value="$$$$">$$$$ Premium</option>
+    </select>
+    <select class="filter-select" id="filter-district" onchange="applyFilters()">
+      <option value="">All Districts</option>
+    </select>
+    <div class="filter-search-wrap">
+      <input class="filter-search" id="filter-search" type="text" placeholder="Search restaurants…"
+             onkeydown="if(event.key==='Enter') applyFilters()">
+    </div>
+  </div>
+
+  <div id="restaurants-loading" style="text-align:center;padding:60px 0;color:rgba(255,255,255,.3)">Loading…</div>
+  <div class="restaurant-grid" id="restaurants-grid"></div>
+</section>
+
+<div class="modal-overlay" id="detailModal">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeDetail()">✕</button>
+    <div id="detail-content"></div>
+  </div>
+</div>
+
 <section id="reservation">
   <div class="section-tag reveal">TABLE RESERVATION</div>
   <h2 class="section-title reveal delay-1">Book <strong>Your Table</strong></h2>
   <div class="section-line reveal delay-2"><span>✦</span></div>
 
   <div class="res-container">
-    <!-- Step Indicator -->
+    <div id="res-restaurant-info" style="display:none;text-align:center;margin-bottom:32px;padding:16px;background:rgba(201,168,76,.08);border:1px solid rgba(201,168,76,.2);border-radius:8px">
+      <p style="color:rgba(255,255,255,.45);font-size:13px;margin-bottom:4px">Booking at</p>
+      <p id="res-restaurant-name" style="color:var(--gold);font-size:18px;font-weight:700"></p>
+      <button class="btn-back" onclick="clearResRestaurant()" style="margin-top:8px;font-size:12px">Change Restaurant</button>
+    </div>
+
     <div class="steps">
       <div class="step-item active" id="si-1">
         <div class="step-circle">1</div>
@@ -170,34 +128,33 @@
       </div>
     </div>
 
-    <!-- Step 1: Choose table type -->
     <div class="step-panel active" id="step-panel-1">
       <div class="table-types">
         <div class="table-type-card" id="card-small" onclick="selectTable('small')">
           <div class="type-icon">🍵</div>
           <div class="type-name">Standard Table</div>
-          <div class="type-cap">Ideal for 1–2 guests</div>
+          <div class="type-cap">1–2 guests</div>
           <span class="avail-badge"><span class="avail-dot"></span>Loading…</span>
           <div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,.38)">Available: <span class="avail-num">—</span></div>
         </div>
         <div class="table-type-card" id="card-medium" onclick="selectTable('medium')">
           <div class="type-icon">🍜</div>
           <div class="type-name">Medium Table</div>
-          <div class="type-cap">Ideal for 3–4 guests</div>
+          <div class="type-cap">3–4 guests</div>
           <span class="avail-badge"><span class="avail-dot"></span>Loading…</span>
           <div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,.38)">Available: <span class="avail-num">—</span></div>
         </div>
         <div class="table-type-card" id="card-large" onclick="selectTable('large')">
           <div class="type-icon">🍽️</div>
           <div class="type-name">Large Table</div>
-          <div class="type-cap">Ideal for 5–8 guests</div>
+          <div class="type-cap">5–8 guests</div>
           <span class="avail-badge"><span class="avail-dot"></span>Loading…</span>
           <div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,.38)">Available: <span class="avail-num">—</span></div>
         </div>
         <div class="table-type-card" id="card-private" onclick="selectTable('private')">
           <div class="type-icon">🏮</div>
           <div class="type-name">Private Room</div>
-          <div class="type-cap">6+ guests · Exclusive space</div>
+          <div class="type-cap">6+ guests · Exclusive</div>
           <span class="avail-badge"><span class="avail-dot"></span>Loading…</span>
           <div style="margin-top:8px;font-size:12px;color:rgba(255,255,255,.38)">Available: <span class="avail-num">—</span></div>
         </div>
@@ -211,7 +168,6 @@
       </div>
     </div>
 
-    <!-- Step 2: Contact info -->
     <div class="step-panel" id="step-panel-2">
       <p style="color:rgba(255,255,255,.5);font-size:14px;margin-bottom:26px">
         Selected: <strong id="selected-type-display" style="color:var(--gold)">—</strong>
@@ -219,10 +175,10 @@
       <div class="res-form">
         <div class="form-row">
           <label class="form-label" for="res-name">Your Name <span style="color:var(--gold)">*</span></label>
-          <input class="form-input" id="res-name" type="text" placeholder="e.g. Mr. Smith / Ms. Johnson" maxlength="30">
+          <input class="form-input" id="res-name" type="text" placeholder="Your name" maxlength="30">
         </div>
         <div class="form-row">
-          <label class="form-label" for="res-phone">Phone Number <span style="color:var(--gold)">*</span></label>
+          <label class="form-label" for="res-phone">Phone <span style="color:var(--gold)">*</span></label>
           <input class="form-input" id="res-phone" type="tel" placeholder="11-digit mobile number" maxlength="11">
         </div>
       </div>
@@ -233,72 +189,39 @@
       </div>
     </div>
 
-    <!-- Step 3: Confirmation + optional pre-order -->
     <div class="step-panel" id="step-panel-3">
       <div class="res-result">
         <div class="result-icon" id="result-icon">✅</div>
-        <h3 id="result-title">Reservation Confirmed</h3>
+        <h3 id="result-title">Booking Confirmed</h3>
         <p id="result-msg"></p>
         <div class="result-note" id="result-note"></div>
       </div>
-
-      <!-- Pre-order (regular tables only) -->
       <div id="preorder-section" style="display:none" class="preorder-section">
-        <h4 class="preorder-title">Pre-Order Dishes <span style="font-size:13px;color:rgba(255,255,255,.3);font-weight:400">— Optional</span></h4>
-        <p class="preorder-sub">Select dishes ahead of your visit and our kitchen will have them ready for you.</p>
+        <h4 class="preorder-title">Pre-Order <span style="font-size:13px;color:rgba(255,255,255,.3);font-weight:400">— Optional</span></h4>
+        <p class="preorder-sub">Select dishes ahead of your visit. Your kitchen will have them ready.</p>
         <div class="preorder-grid" id="preorder-grid"></div>
         <div id="preorder-err" class="error-msg"></div>
         <div class="btn-row">
           <button class="btn-back" onclick="skipPreorder()">Skip</button>
-          <button class="btn-submit" id="btnPreorder" onclick="submitPreorder()">Submit Pre-Order →</button>
+          <button class="btn-submit" id="btnPreorder" onclick="submitPreorder()">Submit →</button>
         </div>
       </div>
-
-      <!-- Pre-order submitted -->
       <div id="preorder-done" style="display:none" class="result-note" style="margin-top:16px">
-        🍽️ Pre-order submitted! Our kitchen will have your selections ready.
+        🍽️ Pre-order submitted! Your kitchen will have your selections ready.
       </div>
-
-      <!-- Done / Make another -->
       <div id="booking-done-btn" style="display:none;margin-top:32px;text-align:center">
-        <button class="btn-primary" onclick="resetReservation()">Make Another Booking</button>
+        <button class="btn-primary" onclick="resetReservation()">Book Another Table</button>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ── MANAGE RESERVATION ────────────────────────────── -->
 <section id="manage">
   <div class="section-tag reveal">MANAGE YOUR BOOKING</div>
-  <h2 class="section-title reveal delay-1">Find &amp; <strong>Modify</strong> Your Reservation</h2>
+  <h2 class="section-title reveal delay-1">Find &amp; <strong>Manage</strong> Your Reservation</h2>
   <div class="section-line reveal delay-2"><span>✦</span></div>
 
   <div class="res-container">
-    <!-- AI Smart Assistant -->
-    <div class="ai-assistant-section reveal delay-3">
-      <div class="ai-assistant-header">
-        <span class="ai-assistant-icon">✨</span>
-        <span>AI Smart Assistant</span>
-      </div>
-      <p class="ai-assistant-desc">Ask anything about your reservation or our tables — in plain English.</p>
-      <div class="ai-assistant-input-wrap">
-        <input class="ai-assistant-input" id="aiCustomerInput" type="text"
-               placeholder='e.g. "Find my reservation", "What tables are available for 4 people?"'
-               onkeydown="if(event.key==='Enter') submitCustomerAISearch()">
-        <button class="btn-ai-assistant" onclick="submitCustomerAISearch()">
-          <span>✨</span> Ask
-        </button>
-      </div>
-      <div class="ai-assistant-suggestions">
-        <span onclick="setCustomerAIQuery('Find my reservation by name')">Find my reservation</span>
-        <span onclick="setCustomerAIQuery('What tables are available tonight?')">Available tables</span>
-        <span onclick="setCustomerAIQuery('How do I book a table?')">How to book?</span>
-        <span onclick="setCustomerAIQuery('Tell me about the private rooms')">About private rooms</span>
-      </div>
-      <div id="aiCustomerResults" class="ai-assistant-results"></div>
-    </div>
-
-    <!-- Lookup form -->
     <div id="lu-form-panel">
       <p style="text-align:center;color:rgba(255,255,255,.45);font-size:14px;margin-bottom:34px">
         Enter your name and phone number exactly as provided when you made your reservation.
@@ -306,7 +229,7 @@
       <div class="res-form">
         <div class="form-row">
           <label class="form-label">Your Name <span style="color:var(--gold)">*</span></label>
-          <input class="form-input" id="lu-name" type="text" placeholder="e.g. Mr. Smith" maxlength="30">
+          <input class="form-input" id="lu-name" type="text" placeholder="Name used when booking" maxlength="30">
         </div>
         <div class="form-row">
           <label class="form-label">Phone Number <span style="color:var(--gold)">*</span></label>
@@ -315,30 +238,26 @@
       </div>
       <div id="lu-err" class="error-msg"></div>
       <div class="btn-row" style="justify-content:center">
-        <button class="btn-submit" id="btnLookup" onclick="lookupReservation()">Find My Reservation</button>
+        <button class="btn-submit" id="btnLookup" onclick="lookupReservation()">Find My Booking</button>
       </div>
     </div>
-
-    <!-- Result -->
     <div id="lu-result-panel" style="display:none">
       <div id="lu-result-content"></div>
     </div>
   </div>
 </section>
 
-<!-- ── FOOTER ─────────────────────────────────────────── -->
 <footer>
-  <div class="footer-logo">Cloud Pavilion</div>
+  <div class="footer-logo">CityEats</div>
   <div class="footer-links">
-    <a href="#">About Us</a>
-    <a href="#">Menu</a>
-    <a href="#reservation">Reservations</a>
+    <a href="#discover">Discover</a>
+    <a href="#restaurants">Restaurants</a>
+    <a href="#reservation">Book</a>
     <a href="#manage">Manage Booking</a>
     <a href="login.html">Staff Portal</a>
   </div>
-  <p>Open Daily · 11:00 AM – 10:00 PM</p>
-  <p>Cloud Plaza, Tower A, Level 3 &nbsp;|&nbsp; Tel: 400-888-9999</p>
-  <p style="margin-top:16px;font-size:11px">© 2025 Cloud Pavilion. All rights reserved.</p>
+  <p>AI-Powered · Discover the Best of the City</p>
+  <p style="margin-top:16px;font-size:11px">© 2026 CityEats. All rights reserved.</p>
 </footer>
 
 </body>

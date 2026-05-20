@@ -259,3 +259,89 @@ function buildAIContext(): string {
 
     return $ctx;
 }
+
+/**
+ * Build a prompt for AI restaurant recommendations and parse the response.
+ * Returns an array of restaurant IDs ordered by relevance, or null on failure.
+ *
+ * @param string $userContext  JSON string with user preferences / history
+ * @param string $restaurants  JSON string with available restaurants data
+ * @return array|null  Array of restaurant IDs, or null
+ */
+function callAIRecommendation(string $userContext, string $restaurants): ?array {
+    $prompt = <<<PROMPT
+You are a city restaurant recommendation engine. Based on the user context and available restaurants below, recommend the best matches.
+
+USER CONTEXT:
+{$userContext}
+
+AVAILABLE RESTAURANTS:
+{$restaurants}
+
+Return ONLY a valid JSON array of restaurant IDs ordered by relevance (best first).
+Rules:
+- Consider cuisine preference, price range, rating, and variety
+- Include at least one restaurant outside the user's usual choices to encourage discovery
+- Return exactly 5 IDs (or fewer if fewer restaurants exist)
+- Return ONLY the JSON array, no other text or explanation
+
+Example: [5, 2, 8, 1, 3]
+PROMPT;
+
+    try {
+        $response = callAI($prompt);
+        $response = trim($response);
+
+        // Try direct JSON parse
+        $ids = json_decode($response, true);
+        if (is_array($ids) && count($ids) > 0) {
+            return array_map('intval', $ids);
+        }
+
+        // Try extracting from code block
+        if (preg_match('/```(?:json)?\s*\n?\[(.*?)\]\n?```/s', $response, $m)) {
+            $ids = json_decode('[' . $m[1] . ']', true);
+            if (is_array($ids)) return array_map('intval', $ids);
+        }
+
+        // Try finding array in text
+        if (preg_match('/\[(\d+(?:\s*,\s*\d+)*)\]/', $response, $m)) {
+            $ids = array_map('intval', explode(',', str_replace(' ', '', $m[1])));
+            if (count($ids) > 0) return $ids;
+        }
+
+        return null;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+/**
+ * Fallback recommendation: rule-based scoring when AI is unavailable.
+ * Scores restaurants by rating, review count, and cuisine match.
+ */
+function fallbackRecommendations(array $restaurants, array $userPrefs = []): array {
+    $maxReviews = 1;
+    foreach ($restaurants as $r) {
+        if ($r['review_count'] > $maxReviews) $maxReviews = $r['review_count'];
+    }
+
+    $scored = [];
+    foreach ($restaurants as $r) {
+        $score = 0;
+        // Rating score (0-40 points)
+        $score += ($r['avg_rating'] / 5.0) * 40;
+        // Popularity score (0-30 points)
+        $score += ($r['review_count'] / $maxReviews) * 30;
+        // Default cuisine match bonus
+        $score += 10;
+
+        $scored[] = [
+            'id' => (int)$r['id'],
+            'score' => round($score, 1),
+        ];
+    }
+
+    usort($scored, fn($a, $b) => $b['score'] <=> $a['score']);
+    return array_slice(array_column($scored, 'id'), 0, 5);
+}

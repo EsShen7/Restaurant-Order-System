@@ -41,6 +41,13 @@ switch ($action) {
 
     // Public — menu & customer self-service
     case 'get_menu':                     getMenu();                    break;
+    case 'get_restaurants':              getRestaurants();             break;
+    case 'get_restaurant':               getRestaurant();              break;
+    case 'get_recommendations':          getRecommendations();         break;
+    case 'get_cuisines':                 getCuisines();                break;
+    case 'get_restaurant_reviews':       getRestaurantReviews();       break;
+    case 'add_review':                   addReview();                  break;
+    case 'get_recommendation_feedback':  logRecommendFeedback();       break;
     case 'ai_search':                    aiSearch();                   break;
     case 'add_pre_order':               addPreOrder();                break;
     case 'find_customer_reservation':   findCustomerReservation();    break;
@@ -747,6 +754,316 @@ function getMenu() {
         ['id' => 9,  'name' => 'Handmade Dimsum Platter',        'emoji' => '🧆'],
         ['id' => 10, 'name' => 'Seasonal Vegetable Medley',      'emoji' => '🥦'],
     ]]);
+}
+
+/* ============================================================
+   RESTAURANT LISTING & RECOMMENDATIONS
+   ============================================================ */
+
+function getRestaurants() {
+    global $data;
+    $db       = getDB();
+    $cuisine  = trim($data['cuisine'] ?? '');
+    $district = trim($data['district'] ?? '');
+    $price    = trim($data['price'] ?? '');
+    $search   = trim($data['search'] ?? '');
+    $limit    = min(50, max(1, (int)($data['limit'] ?? 20)));
+
+    $sql = "SELECT r.id, r.name, r.name_cn, r.description, r.district, r.price_range,
+                   r.avg_rating, r.review_count, r.opening_hours, r.phone, r.address, r.image_url
+            FROM restaurants r WHERE r.is_active = 1";
+    $params = [];
+
+    if ($cuisine) {
+        $sql .= " AND r.id IN (SELECT restaurant_id FROM restaurant_cuisine_map rc JOIN restaurant_cuisines c ON c.id=rc.cuisine_id WHERE c.name=?)";
+        $params[] = $cuisine;
+    }
+    if ($district) {
+        $sql .= " AND r.district LIKE ?";
+        $params[] = "%$district%";
+    }
+    if ($price) {
+        $sql .= " AND r.price_range = ?";
+        $params[] = $price;
+    }
+    if ($search) {
+        $sql .= " AND (r.name LIKE ? OR r.name_cn LIKE ? OR r.description LIKE ? OR r.district LIKE ?)";
+        $like = "%$search%";
+        $params = array_merge($params, [$like, $like, $like, $like]);
+    }
+    $sql .= " ORDER BY r.avg_rating DESC, r.review_count DESC LIMIT " . (int)$limit;
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    $restaurants = $stmt->fetchAll();
+
+    // Attach cuisines to each restaurant
+    $cuisineStmt = $db->prepare(
+        "SELECT c.name FROM restaurant_cuisine_map rc
+         JOIN restaurant_cuisines c ON c.id = rc.cuisine_id
+         WHERE rc.restaurant_id = ?"
+    );
+    foreach ($restaurants as &$r) {
+        $cuisineStmt->execute([$r['id']]);
+        $r['cuisines'] = array_column($cuisineStmt->fetchAll(), 'name');
+    }
+    unset($r);
+
+    ok(['restaurants' => $restaurants]);
+}
+
+function getRestaurant() {
+    global $data;
+    $id = (int)($data['id'] ?? 0);
+    if (!$id) err('Missing restaurant ID.');
+
+    $db = getDB();
+    $stmt = $db->prepare(
+        "SELECT r.* FROM restaurants r WHERE r.id = ? AND r.is_active = 1"
+    );
+    $stmt->execute([$id]);
+    $restaurant = $stmt->fetch();
+    if (!$restaurant) err('Restaurant not found.');
+
+    // Get cuisines
+    $stmt = $db->prepare(
+        "SELECT c.name FROM restaurant_cuisine_map rc
+         JOIN restaurant_cuisines c ON c.id = rc.cuisine_id
+         WHERE rc.restaurant_id = ?"
+    );
+    $stmt->execute([$id]);
+    $restaurant['cuisines'] = array_column($stmt->fetchAll(), 'name');
+
+    // Get menu items
+    $menuStmt = $db->prepare(
+        "SELECT mi.item_id, mi.name, mi.description, mi.price, mi.image_url, mi.is_available,
+                c.name AS category_name
+         FROM menu_items mi
+         LEFT JOIN categories c ON c.category_id = mi.category_id
+         WHERE mi.restaurant_id = ? OR mi.restaurant_id IS NULL
+         ORDER BY c.display_order, mi.name"
+    );
+    $menuStmt->execute([$id]);
+    $restaurant['menu'] = $menuStmt->fetchAll();
+
+    ok(['restaurant' => $restaurant]);
+}
+
+function getCuisines() {
+    $db = getDB();
+    $rows = $db->query("SELECT id, name FROM restaurant_cuisines ORDER BY id")->fetchAll();
+    ok(['cuisines' => $rows]);
+}
+
+function getRecommendations() {
+    global $data;
+    $db = getDB();
+
+    // Determine user context
+    $userId = (int)($data['user_id'] ?? 0);
+    $query  = trim($data['query'] ?? '');
+
+    // Build user context string
+    $userContext = [];
+    $userContext['time'] = date('Y-m-d H:i:s');
+    $userContext['day_of_week'] = date('l');
+
+    if ($userId) {
+        $stmt = $db->prepare("SELECT * FROM user_preferences WHERE user_id = ?");
+        $stmt->execute([$userId]);
+        $prefs = $stmt->fetch();
+        if ($prefs) {
+            $userContext['preferences'] = $prefs;
+        }
+
+        $stmt = $db->prepare(
+            "SELECT r.id, r.name, r.name_cn, uh.action_type
+             FROM user_history uh
+             JOIN restaurants r ON r.id = uh.restaurant_id
+             WHERE uh.user_id = ? ORDER BY uh.created_at DESC LIMIT 10"
+        );
+        $stmt->execute([$userId]);
+        $history = $stmt->fetchAll();
+        if ($history) {
+            $userContext['history'] = $history;
+        }
+
+        // Get favorites
+        $stmt = $db->prepare("SELECT restaurant_id FROM user_favorites WHERE user_id = ?");
+        $stmt->execute([$userId]);
+        $favs = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        if ($favs) {
+            $userContext['favorites'] = $favs;
+        }
+    }
+
+    if ($query) {
+        $userContext['user_query'] = $query;
+    }
+
+    // Get all active restaurants
+    $restaurants = $db->query(
+        "SELECT r.id, r.name, r.name_cn, r.district, r.price_range, r.avg_rating, r.review_count,
+                r.description
+         FROM restaurants r WHERE r.is_active = 1 ORDER BY r.avg_rating DESC"
+    )->fetchAll();
+
+    if (empty($restaurants)) {
+        ok(['recommendations' => []]);
+        return;
+    }
+
+    // Attach cuisines
+    $cuisineStmt = $db->prepare(
+        "SELECT c.name FROM restaurant_cuisine_map rc
+         JOIN restaurant_cuisines c ON c.id = rc.cuisine_id
+         WHERE rc.restaurant_id = ?"
+    );
+    foreach ($restaurants as &$r) {
+        $cuisineStmt->execute([$r['id']]);
+        $r['cuisines'] = array_column($cuisineStmt->fetchAll(), 'name');
+    }
+    unset($r);
+
+    // Step 1: Try AI-powered recommendation
+    $recommendedIds = null;
+    try {
+        $userContextJson = json_encode($userContext, JSON_UNESCAPED_UNICODE);
+        $restaurantsJson = json_encode($restaurants, JSON_UNESCAPED_UNICODE);
+        $recommendedIds = callAIRecommendation($userContextJson, $restaurantsJson);
+    } catch (Throwable $e) {
+        // AI failed, fall through to fallback
+    }
+
+    // Step 2: Fallback to rule-based scoring
+    if (!$recommendedIds || count($recommendedIds) === 0) {
+        $recommendedIds = fallbackRecommendations($restaurants);
+    }
+
+    // Filter to only valid IDs and build full result
+    $validIds = array_unique(array_map('intval', $recommendedIds));
+    $resultRestaurants = [];
+    $idOrder = array_flip($validIds);
+
+    foreach ($restaurants as $r) {
+        if (isset($idOrder[$r['id']])) {
+            $resultRestaurants[] = $r;
+        }
+    }
+
+    // Sort by the AI's order
+    usort($resultRestaurants, function ($a, $b) use ($idOrder) {
+        return ($idOrder[$a['id']] ?? 999) <=> ($idOrder[$b['id']] ?? 999);
+    });
+
+    // Log recommendation
+    try {
+        $stmt = $db->prepare(
+            "INSERT INTO ai_recommendation_logs (user_id, query_text, recommendations) VALUES (?, ?, ?)"
+        );
+        $stmt->execute([
+            $userId ?: null,
+            $query ?: null,
+            json_encode(array_column($resultRestaurants, 'id'))
+        ]);
+    } catch (Throwable $e) {
+        // Non-critical, ignore
+    }
+
+    ok(['recommendations' => $resultRestaurants]);
+}
+
+function getRestaurantReviews() {
+    global $data;
+    $id    = (int)($data['id'] ?? 0);
+    $limit = min(50, max(1, (int)($data['limit'] ?? 20)));
+
+    if (!$id) err('Missing restaurant ID.');
+
+    $db = getDB();
+    $stmt = $db->prepare(
+        "SELECT r.id, r.customer_name, r.rating, r.comment, r.created_at
+         FROM reviews r WHERE r.restaurant_id = ?
+         ORDER BY r.created_at DESC LIMIT " . (int)$limit
+    );
+    $stmt->execute([$id]);
+    $reviews = $stmt->fetchAll();
+
+    // Get rating summary
+    $summary = $db->prepare(
+        "SELECT COUNT(*) AS total, AVG(rating) AS avg_rating,
+                SUM(CASE WHEN rating=5 THEN 1 ELSE 0 END) AS five,
+                SUM(CASE WHEN rating=4 THEN 1 ELSE 0 END) AS four,
+                SUM(CASE WHEN rating=3 THEN 1 ELSE 0 END) AS three,
+                SUM(CASE WHEN rating=2 THEN 1 ELSE 0 END) AS two,
+                SUM(CASE WHEN rating=1 THEN 1 ELSE 0 END) AS one
+         FROM reviews WHERE restaurant_id = ?"
+    );
+    $summary->execute([$id]);
+    $stats = $summary->fetch();
+
+    ok(['reviews' => $reviews, 'stats' => $stats]);
+}
+
+function addReview() {
+    global $data;
+    $restaurantId = (int)($data['restaurant_id'] ?? 0);
+    $name         = trim($data['customer_name'] ?? '');
+    $rating       = (int)($data['rating'] ?? 0);
+    $comment      = trim($data['comment'] ?? '');
+    $userId       = (int)($data['user_id'] ?? 0);
+
+    if (!$restaurantId) err('Missing restaurant ID.');
+    if (!$name)         err('Please enter your name.');
+    if ($rating < 1 || $rating > 5) err('Rating must be between 1 and 5.');
+    if (!$comment)      err('Please write a comment.');
+
+    $db = getDB();
+
+    // Verify restaurant exists
+    $chk = $db->prepare("SELECT id FROM restaurants WHERE id = ? AND is_active = 1");
+    $chk->execute([$restaurantId]);
+    if (!$chk->fetch()) err('Restaurant not found.');
+
+    $stmt = $db->prepare(
+        "INSERT INTO reviews (restaurant_id, user_id, customer_name, rating, comment) VALUES (?, ?, ?, ?, ?)"
+    );
+    $stmt->execute([$restaurantId, $userId ?: null, $name, $rating, $comment]);
+
+    // Update aggregate rating
+    $db->prepare(
+        "UPDATE restaurants r SET
+            avg_rating   = ROUND((SELECT AVG(rating) FROM reviews WHERE restaurant_id = r.id), 1),
+            review_count = (SELECT COUNT(*) FROM reviews WHERE restaurant_id = r.id)
+         WHERE r.id = ?"
+    )->execute([$restaurantId]);
+
+    // Log history
+    if ($userId) {
+        try {
+            $db->prepare(
+                "INSERT INTO user_history (user_id, restaurant_id, action_type) VALUES (?, ?, 'review')"
+            )->execute([$userId, $restaurantId]);
+        } catch (Throwable $e) {}
+    }
+
+    ok(['message' => 'Review submitted. Thank you for your feedback!', 'id' => (int)$db->lastInsertId()]);
+}
+
+function logRecommendFeedback() {
+    global $data;
+    $logId = (int)($data['log_id'] ?? 0);
+    $feedback = trim($data['feedback'] ?? '');
+
+    if (!$logId || !in_array($feedback, ['clicked','ignored','thumbs_up','thumbs_down'])) {
+        ok(); // Silent ignore for non-critical feedback
+        return;
+    }
+
+    $db = getDB();
+    $db->prepare("UPDATE ai_recommendation_logs SET user_feedback = ? WHERE id = ?")
+       ->execute([$feedback, $logId]);
+    ok();
 }
 
 /* ============================================================

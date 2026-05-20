@@ -1,3 +1,7 @@
+/* ═══════════════════════════════════════════════════════
+   CityEats · City-wide Restaurant Discovery
+   ═══════════════════════════════════════════════════════ */
+
 /* ── STATE ─────────────────────────────────────────── */
 const state = {
   step: 1,
@@ -6,6 +10,8 @@ const state = {
   reservationId: null,
   menuItems: [],
   lookupData: null,
+  allRestaurants: [],
+  selectedRestaurant: null, // for booking context
 };
 
 /* ── INIT ──────────────────────────────────────────── */
@@ -13,27 +19,283 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('startBtn')?.addEventListener('click', scrollToReservation);
   document.getElementById('navBookBtn')?.addEventListener('click', scrollToReservation);
   document.getElementById('navManageBtn')?.addEventListener('click', scrollToManage);
+
   loadAvailability();
   loadMenu();
   initVisualEffects();
+  loadCuisines();
+  loadRecommendations();
+  loadAllRestaurants();
 });
 
-function scrollToReservation() {
-  document.getElementById('reservation').scrollIntoView({ behavior: 'smooth' });
-}
-function scrollToManage() {
-  document.getElementById('manage').scrollIntoView({ behavior: 'smooth' });
+function scrollToReservation() { document.getElementById('reservation').scrollIntoView({ behavior: 'smooth' }); }
+function scrollToManage() { document.getElementById('manage').scrollIntoView({ behavior: 'smooth' }); }
+function scrollToDiscover() { document.getElementById('discover').scrollIntoView({ behavior: 'smooth' }); }
+
+/* ── API HELPER ────────────────────────────────────── */
+async function api(action, body = {}) {
+  const params = new URLSearchParams({ action });
+  const resp = await fetch(`api.php?${params}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = await resp.json();
+  if (!json.success) throw new Error(json.error || 'Request failed.');
+  return json;
 }
 
-/* ── AVAILABILITY ──────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════
+   RESTAURANT DISCOVERY
+   ═══════════════════════════════════════════════════════ */
+
+/* ── CUISINES & FILTERS ───────────────────────────── */
+async function loadCuisines() {
+  try {
+    const res = await api('get_cuisines');
+    const select = document.getElementById('filter-cuisine');
+    if (!select) return;
+    res.cuisines.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.name;
+      opt.textContent = c.name;
+      select.appendChild(opt);
+    });
+    // Load districts from restaurant data
+    const districts = [...new Set(state.allRestaurants.map(r => r.district).filter(Boolean))];
+    const distSelect = document.getElementById('filter-district');
+    if (districts.length > 0 && distSelect) {
+      districts.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.textContent = d;
+        distSelect.appendChild(opt);
+      });
+    }
+  } catch(e) { console.warn('Failed to load cuisines', e); }
+}
+
+function applyFilters() {
+  loadAllRestaurants(true);
+}
+
+/* ── AI RECOMMENDATIONS ───────────────────────────── */
+async function loadRecommendations() {
+  const grid = document.getElementById('discover-grid');
+  const loading = document.getElementById('discover-loading');
+  if (!grid) return;
+
+  try {
+    const res = await api('get_recommendations', { limit: 6 });
+    if (loading) loading.style.display = 'none';
+    if (!res.recommendations || res.recommendations.length === 0) {
+      grid.innerHTML = '<p style="text-align:center;color:rgba(255,255,255,.3);grid-column:1/-1;padding:40px">No recommendations right now</p>';
+      return;
+    }
+    grid.innerHTML = res.recommendations.map(r => renderRestaurantCard(r, 'discover')).join('');
+  } catch(e) {
+    if (loading) loading.style.display = 'none';
+    grid.innerHTML = '<p style="text-align:center;color:rgba(255,255,255,.3);grid-column:1/-1;padding:40px">Failed to load recommendations</p>';
+  }
+}
+
+/* ── ALL RESTAURANTS ──────────────────────────────── */
+async function loadAllRestaurants(useFilter = false) {
+  const grid = document.getElementById('restaurants-grid');
+  const loading = document.getElementById('restaurants-loading');
+  if (!grid) return;
+  if (!useFilter) loading.style.display = '';
+
+  const params = { limit: 50 };
+  if (useFilter) {
+    const cuisine = document.getElementById('filter-cuisine')?.value || '';
+    const price = document.getElementById('filter-price')?.value || '';
+    const district = document.getElementById('filter-district')?.value || '';
+    const search = document.getElementById('filter-search')?.value || '';
+    if (cuisine) params.cuisine = cuisine;
+    if (price) params.price = price;
+    if (district) params.district = district;
+    if (search) params.search = search;
+  }
+
+  try {
+    const res = await api('get_restaurants', params);
+    state.allRestaurants = res.restaurants;
+    if (loading) loading.style.display = 'none';
+    if (!res.restaurants || res.restaurants.length === 0) {
+      grid.innerHTML = '<p style="text-align:center;color:var(--muted);grid-column:1/-1;padding:60px">No restaurants match your criteria</p>';
+      return;
+    }
+    grid.innerHTML = res.restaurants.map(r => renderRestaurantCard(r, 'all')).join('');
+  } catch(e) {
+    if (loading) loading.style.display = 'none';
+    grid.innerHTML = '<p style="text-align:center;color:var(--muted);grid-column:1/-1;padding:60px">Failed to load restaurants</p>';
+  }
+}
+
+/* ── RENDER RESTAURANT CARD ───────────────────────── */
+function renderRestaurantCard(r, context) {
+  const emojiMap = {
+    'Sichuan':'🌶️','Cantonese':'🥟','Japanese':'🍣','Western':'🍝','Hotpot':'🍲','BBQ':'🍖',
+    'SE Asian':'🍛','Coffee':'☕','Tea':'🫖','Snacks':'🥟','Dessert':'🍰','Seafood':'🦐',
+  };
+  const img = r.cuisines?.length ? (emojiMap[r.cuisines[0]] || '🍽️') : '🍽️';
+  const cnName = r.name_cn ? `<span class="restaurant-card-name-cn">${esc(r.name_cn)}</span>` : '';
+  const cuisines = r.cuisines?.map(c => `<span class="cuisine-tag">${esc(c)}</span>`).join('') || '';
+  const stars = '★'.repeat(Math.round(r.avg_rating)).padEnd(5, '☆');
+
+  return `<div class="restaurant-card" onclick="openDetail(${r.id})">
+    <div class="restaurant-card-img">${img}</div>
+    <div class="restaurant-card-body">
+      <div class="restaurant-card-header">
+        <div class="restaurant-card-name">${esc(r.name)}${cnName}</div>
+        <div class="restaurant-card-rating">${stars} ${r.avg_rating}</div>
+      </div>
+      <div class="restaurant-card-cuisines">${cuisines}</div>
+      <div class="restaurant-card-meta">
+        <span>📍 ${esc(r.district || '')}</span>
+        <span>💰 ${esc(r.price_range || '')}</span>
+        <span>💬 ${r.review_count || 0} reviews</span>
+      </div>
+      <div class="restaurant-card-desc">${esc(r.description || '')}</div>
+    </div>
+  </div>`;
+}
+
+/* ── HERO SEARCH ───────────────────────────────────── */
+function doHeroSearch() {
+  const input = document.getElementById('heroSearchInput');
+  const query = input.value.trim();
+  if (!query) return;
+  // Set filter search and switch to restaurants tab
+  const searchInput = document.getElementById('filter-search');
+  if (searchInput) searchInput.value = query;
+  applyFilters();
+  document.getElementById('restaurants').scrollIntoView({ behavior: 'smooth' });
+}
+
+function searchCuisine(cuisine) {
+  const select = document.getElementById('filter-cuisine');
+  if (select) {
+    // Find and select the matching cuisine option
+    for (const opt of select.options) {
+      if (opt.value === cuisine) { opt.selected = true; break; }
+    }
+  }
+  applyFilters();
+  document.getElementById('restaurants').scrollIntoView({ behavior: 'smooth' });
+}
+
+/* ── RESTAURANT DETAIL MODAL ───────────────────────── */
+async function openDetail(restaurantId) {
+  const modal = document.getElementById('detailModal');
+  const content = document.getElementById('detail-content');
+  if (!modal || !content) return;
+
+  modal.classList.add('show');
+  content.innerHTML = '<div style="text-align:center;padding:80px 0;color:var(--muted)">Loading…</div>';
+
+  try {
+    const [restRes, reviewRes] = await Promise.all([
+      api('get_restaurant', { id: restaurantId }),
+      api('get_restaurant_reviews', { id: restaurantId, limit: 10 }),
+    ]);
+    const r = restRes.restaurant;
+    const reviews = reviewRes.reviews || [];
+
+    const cnName = r.name_cn ? `<span class="modal-header-name-cn">${esc(r.name_cn)}</span>` : '';
+    const cuisines = r.cuisines?.map(c => `<span class="cuisine-tag" style="font-size:12px">${esc(c)}</span>`).join('') || '';
+    const stars = '★'.repeat(Math.round(r.avg_rating)).padEnd(5, '☆');
+    const opens = r.opening_hours ? `<span>🕐 ${esc(r.opening_hours)}</span>` : '';
+    const phone = r.phone ? `<span>📞 ${esc(r.phone)}</span>` : '';
+    const address = r.address ? `<span>📍 ${esc(r.address)}</span>` : '';
+
+    const menuHtml = r.menu?.length
+      ? r.menu.map(m => `
+        <div class="modal-menu-item">
+          <div>
+            <div class="modal-menu-item-name">${esc(m.name)}</div>
+            ${m.description ? `<div class="modal-menu-item-desc">${esc(m.description)}</div>` : ''}
+          </div>
+          <div class="modal-menu-item-price">¥${parseFloat(m.price).toFixed(2)}</div>
+        </div>
+      `).join('')
+      : '<p style="color:var(--muted);font-size:13px">No menu information</p>';
+
+    const reviewsHtml = reviews.length
+      ? reviews.map(rv => {
+          const rvStars = '★'.repeat(rv.rating).padEnd(5, '☆');
+          return `<div class="review-item">
+            <div class="review-header">
+              <span class="review-name">${esc(rv.customer_name || 'Anonymous')}</span>
+              <span class="review-rating">${rvStars}</span>
+            </div>
+            <div class="review-comment">${esc(rv.comment)}</div>
+            <div class="review-date">${fmtDate(rv.created_at)}</div>
+          </div>`;
+        }).join('')
+      : '<p style="color:var(--muted);font-size:13px">No reviews yet</p>';
+
+    content.innerHTML = `<div class="modal-inner">
+      <div class="modal-header">
+        <div class="modal-header-name">${esc(r.name)}${cnName}</div>
+        <div class="modal-header-meta">
+          <span class="modal-header-rating">${stars} ${r.avg_rating}</span>
+          <span>💰 ${esc(r.price_range || '')}</span>
+          <span>💬 ${r.review_count || 0} reviews</span>
+          ${opens}
+        </div>
+        <div class="modal-header-cuisines" style="margin-top:8px">${cuisines}</div>
+        ${phone}
+        ${address}
+        ${r.description ? `<div class="modal-header-desc">${esc(r.description)}</div>` : ''}
+      </div>
+
+      <div class="modal-section-title">🍽️ Recommended Dishes</div>
+      <div>${menuHtml}</div>
+
+      <div class="modal-section-title">💬 Customer Reviews</div>
+      <div>${reviewsHtml}</div>
+
+      <button class="modal-btn-book" onclick="bookFromDetail(${r.id}, '${esc(r.name)}')">
+        Book at ${esc(r.name)}
+      </button>
+    </div>`;
+  } catch(e) {
+    content.innerHTML = `<div style="text-align:center;padding:80px;color:#e74c3c">Failed to load: ${esc(e.message)}</div>`;
+  }
+}
+
+function closeDetail() {
+  const modal = document.getElementById('detailModal');
+  if (modal) modal.classList.remove('show');
+}
+
+function bookFromDetail(id, name) {
+  closeDetail();
+  state.selectedRestaurant = { id, name };
+  const infoEl = document.getElementById('res-restaurant-info');
+  const nameEl = document.getElementById('res-restaurant-name');
+  if (infoEl) infoEl.style.display = '';
+  if (nameEl) nameEl.textContent = name;
+  scrollToReservation();
+}
+
+function clearResRestaurant() {
+  state.selectedRestaurant = null;
+  const infoEl = document.getElementById('res-restaurant-info');
+  if (infoEl) infoEl.style.display = 'none';
+}
+
+/* ═══════════════════════════════════════════════════════
+   AVAILABILITY (kept from original)
+   ═══════════════════════════════════════════════════════ */
 async function loadAvailability() {
   try {
     const res = await api('get_availability');
     state.availability = res;
     renderTableCards(res.types);
-  } catch (e) {
-    console.warn('Availability load failed', e);
-  }
+  } catch (e) { console.warn('Availability load failed', e); }
 }
 
 function renderTableCards(types) {
@@ -81,9 +343,9 @@ function selectTable(type) {
 function nextStep1() {
   if (!state.tableType) { showErr('step1-err', 'Please select a table type.'); return; }
   const names = {
-    small:   'Standard Table (1–2 guests)',
-    medium:  'Medium Table (3–4 guests)',
-    large:   'Large Table (5–8 guests)',
+    small:   'Standard Table (1-2 guests)',
+    medium:  'Medium Table (3-4 guests)',
+    large:   'Large Table (5-8 guests)',
     private: 'Private Room',
   };
   document.getElementById('selected-type-display').textContent = names[state.tableType];
@@ -96,7 +358,7 @@ async function submitReservation() {
   const phone = document.getElementById('res-phone').value.trim();
   hideErr('step2-err');
   if (!name)  { showErr('step2-err', 'Please enter your name.'); return; }
-  if (!/^1[3-9]\d{9}$/.test(phone)) { showErr('step2-err', 'Please enter a valid 11-digit mobile number.'); return; }
+  if (!/^1[3-9]\d{9}$/.test(phone)) { showErr('step2-err', 'Please enter a valid 11-digit phone number.'); return; }
 
   const btn = document.getElementById('btnSubmit');
   btn.disabled = true; btn.textContent = 'Submitting…';
@@ -112,30 +374,34 @@ async function submitReservation() {
     }
     goStep(3);
   } catch (e) {
-    showErr('step2-err', e.message || 'Submission failed. Please try again.');
+    showErr('step2-err', e.message || 'Submission failed, please try again.');
   } finally {
     btn.disabled = false; btn.textContent = 'Confirm Booking';
   }
 }
 
 function showResult(type, name, msg) {
-  document.getElementById('result-icon').textContent  = type === 'success' ? '✅' : '📋';
-  document.getElementById('result-title').textContent = type === 'success'
-    ? `Reservation confirmed, ${name}!` : `Request received, ${name}!`;
-  document.getElementById('result-msg').textContent   = msg;
+  const titleEl = document.getElementById('result-title');
+  const iconEl = document.getElementById('result-icon');
+  const msgEl = document.getElementById('result-msg');
   const noteEl = document.getElementById('result-note');
-  noteEl.textContent  = type === 'success'
-    ? 'To cancel or modify your reservation, please call us in advance. Thank you for your understanding.'
-    : 'Private room bookings require staff confirmation. We will contact you shortly — please keep your phone available.';
-  noteEl.style.display = '';
+  if (iconEl) iconEl.textContent = type === 'success' ? '✅' : '📋';
+  if (titleEl) titleEl.textContent = type === 'success' ? `${name}, booking confirmed!` : `${name}, request submitted!`;
+  if (msgEl) msgEl.textContent = msg;
+  if (noteEl) {
+    noteEl.textContent = type === 'success'
+      ? 'To cancel or modify, please call us in advance.'
+      : 'Private rooms require staff confirmation. We will contact you shortly. Please keep your phone available.';
+    noteEl.style.display = '';
+  }
 
   const preorderSection = document.getElementById('preorder-section');
-  const doneBtnWrap     = document.getElementById('booking-done-btn');
-  const preorderDone    = document.getElementById('preorder-done');
-  preorderDone.style.display = 'none';
+  const doneBtnWrap = document.getElementById('booking-done-btn');
+  const preorderDone = document.getElementById('preorder-done');
+  if (preorderDone) preorderDone.style.display = 'none';
 
-  preorderSection.style.display = 'none';
-  doneBtnWrap.style.display     = 'none';
+  if (preorderSection) preorderSection.style.display = 'none';
+  if (doneBtnWrap) doneBtnWrap.style.display = 'none';
   if (type === 'success' && state.reservationId) {
     renderPreorderMenu();
     setTimeout(() => fadeIn(preorderSection, 400), 80);
@@ -148,13 +414,17 @@ function resetReservation() {
   state.tableType = null;
   state.reservationId = null;
   document.querySelectorAll('.table-type-card').forEach(c => c.classList.remove('selected'));
-  document.getElementById('res-name').value  = '';
-  document.getElementById('res-phone').value = '';
+  const nameEl = document.getElementById('res-name');
+  const phoneEl = document.getElementById('res-phone');
+  if (nameEl) nameEl.value = '';
+  if (phoneEl) phoneEl.value = '';
   document.getElementById('btnNext1').disabled = true;
-  document.getElementById('preorder-section').style.display = 'none';
-  document.getElementById('booking-done-btn').style.display = 'none';
-  document.getElementById('preorder-done').style.display    = 'none';
-  // Reset qty counters
+  const ps = document.getElementById('preorder-section');
+  const db = document.getElementById('booking-done-btn');
+  const pd = document.getElementById('preorder-done');
+  if (ps) ps.style.display = 'none';
+  if (db) db.style.display = 'none';
+  if (pd) pd.style.display = 'none';
   document.querySelectorAll('[id^="qty-"]').forEach(el => { el.textContent = '0'; });
   document.querySelectorAll('.preorder-item').forEach(el => el.classList.remove('selected'));
   loadAvailability();
@@ -173,7 +443,7 @@ function renderPreorderMenu() {
   const grid = document.getElementById('preorder-grid');
   if (!grid) return;
   if (!state.menuItems.length) {
-    grid.innerHTML = '<p style="color:rgba(255,255,255,.4);font-size:13px">Menu unavailable.</p>';
+    grid.innerHTML = '<p style="color:rgba(255,255,255,.4);font-size:13px">Menu not available.</p>';
     return;
   }
   grid.innerHTML = state.menuItems.map(item => `
@@ -200,7 +470,7 @@ function changeQty(itemId, delta) {
 }
 
 async function submitPreorder() {
-  if (!state.reservationId) { showErr('preorder-err', 'Reservation ID missing. Please try again.'); return; }
+  if (!state.reservationId) { showErr('preorder-err', 'Reservation ID missing.'); return; }
   const items = [];
   document.querySelectorAll('[id^="qty-"]').forEach(el => {
     const qty = parseInt(el.textContent);
@@ -212,20 +482,20 @@ async function submitPreorder() {
   });
   if (!items.length) { showErr('preorder-err', 'Please select at least one dish.'); return; }
   hideErr('preorder-err');
-
   const btn = document.getElementById('btnPreorder');
   btn.disabled = true; btn.textContent = 'Submitting…';
   try {
     await api('add_pre_order', { reservation_id: state.reservationId, items });
-    const preorderDoneEl = document.getElementById('preorder-done');
-    const doneBtnEl      = document.getElementById('booking-done-btn');
-    fadeOut(document.getElementById('preorder-section'), 260, () => {
-      fadeIn(preorderDoneEl, 380);
-      setTimeout(() => fadeIn(doneBtnEl, 380), 120);
+    const pd = document.getElementById('preorder-done');
+    const db = document.getElementById('booking-done-btn');
+    const ps = document.getElementById('preorder-section');
+    fadeOut(ps, 260, () => {
+      fadeIn(pd, 380);
+      setTimeout(() => fadeIn(db, 380), 120);
     });
   } catch(e) {
     showErr('preorder-err', e.message);
-    btn.disabled = false; btn.textContent = 'Submit Pre-Order →';
+    btn.disabled = false; btn.textContent = 'Submit →';
   }
 }
 
@@ -235,7 +505,7 @@ function skipPreorder() {
   });
 }
 
-/* ── PANEL ANIMATION HELPERS ───────────────────────── */
+/* ── PANEL ANIMATIONS ──────────────────────────────── */
 function fadeIn(el, duration = 420, translateY = 18) {
   if (!el) return;
   el.style.display = '';
@@ -245,12 +515,7 @@ function fadeIn(el, duration = 420, translateY = 18) {
   requestAnimationFrame(() => requestAnimationFrame(() => {
     el.style.opacity = '1';
     el.style.transform = 'none';
-    const cleanup = () => {
-      el.style.transition = '';
-      el.style.opacity = '';
-      el.style.transform = '';
-      el.removeEventListener('transitionend', cleanup);
-    };
+    const cleanup = () => { el.style.transition = ''; el.style.opacity = ''; el.style.transform = ''; el.removeEventListener('transitionend', cleanup); };
     el.addEventListener('transitionend', cleanup, { once: true });
   }));
 }
@@ -260,15 +525,9 @@ function fadeOut(el, duration = 280, cb) {
   el.style.transition = `opacity ${duration}ms cubic-bezier(.4,0,.2,1), transform ${duration}ms cubic-bezier(.4,0,.2,1)`;
   el.style.opacity = '0';
   el.style.transform = 'translateY(-12px)';
-  const finish = () => {
-    el.style.display = 'none';
-    el.style.opacity = '';
-    el.style.transform = '';
-    el.style.transition = '';
-    if (cb) cb();
-  };
+  const finish = () => { el.style.display = 'none'; el.style.opacity = ''; el.style.transform = ''; el.style.transition = ''; if (cb) cb(); };
   el.addEventListener('transitionend', finish, { once: true });
-  setTimeout(finish, duration + 30); // fallback if transitionend misfires
+  setTimeout(finish, duration + 30);
 }
 
 /* ── STEP NAVIGATION ───────────────────────────────── */
@@ -294,25 +553,24 @@ function goStep(n) {
     _stepping = true;
     prev.classList.add('exiting');
     setTimeout(doSwitch, 270);
-  } else {
-    doSwitch();
-  }
+  } else { doSwitch(); }
 }
 
-/* ── MANAGE RESERVATION ────────────────────────────── */
+/* ═══════════════════════════════════════════════════════
+   MANAGE RESERVATION (kept from original)
+   ═══════════════════════════════════════════════════════ */
 async function lookupReservation() {
   const name  = document.getElementById('lu-name').value.trim();
   const phone = document.getElementById('lu-phone').value.trim();
   hideErr('lu-err');
   if (!name)  { showErr('lu-err', 'Please enter your name.'); return; }
   if (!/^1[3-9]\d{9}$/.test(phone)) { showErr('lu-err', 'Please enter a valid 11-digit phone number.'); return; }
-
   const btn = document.getElementById('btnLookup');
   btn.disabled = true; btn.textContent = 'Searching…';
   try {
     const res = await api('find_customer_reservation', { customer_name: name, phone });
     if (!res.found) {
-      showErr('lu-err', 'No reservation found. Please check that your name and phone number exactly match what you entered when booking.');
+      showErr('lu-err', 'No booking found. Please check your name and phone number match what was entered when booking.');
       return;
     }
     renderLookupResult(res);
@@ -322,13 +580,12 @@ async function lookupReservation() {
   } catch(e) {
     showErr('lu-err', e.message);
   } finally {
-    btn.disabled = false; btn.textContent = 'Find My Reservation';
+    btn.disabled = false; btn.textContent = 'Find My Booking';
   }
 }
 
 function renderLookupResult(res) {
   const el = document.getElementById('lu-result-content');
-
   if (res.type === 'private_request') {
     const r = res.request;
     state.lookupData = { type: 'private', id: r.id, name: r.customer_name, phone: r.phone };
@@ -336,95 +593,80 @@ function renderLookupResult(res) {
       <div class="lookup-card">
         <span class="lookup-type-badge private">Private Room Request</span>
         <div class="lookup-info">
-          <div class="lookup-row"><span class="lookup-label">Guest</span><span class="lookup-value">${esc(r.customer_name)}</span></div>
+          <div class="lookup-row"><span class="lookup-label">Customer</span><span class="lookup-value">${esc(r.customer_name)}</span></div>
           <div class="lookup-row"><span class="lookup-label">Phone</span><span class="lookup-value">${esc(r.phone)}</span></div>
-          <div class="lookup-row"><span class="lookup-label">Submitted</span><span class="lookup-value">${fmtDate(r.created_at)}</span></div>
+          <div class="lookup-row"><span class="lookup-label">Submitted at</span><span class="lookup-value">${fmtDate(r.created_at)}</span></div>
         </div>
-        <div class="lookup-pending-note">
-          ⏳ Your private room request is currently being reviewed by our staff.
-          We will contact you shortly to confirm the details. Please keep your phone available.
-        </div>
-
+        <div class="lookup-pending-note">⏳ Your private room request is being reviewed. We will contact you soon.</div>
         <div id="lu-cancel-confirm" class="cancel-confirm-panel" style="display:none">
           <p style="color:rgba(255,255,255,.65);font-size:14px;line-height:1.75;margin-bottom:18px">
-            ⚠️ Are you sure you want to withdraw your private room request? This cannot be undone.
+            ⚠️ Are you sure you want to cancel the private room request? This cannot be undone.
           </p>
           <div id="lu-cancel-err" class="error-msg"></div>
           <div class="btn-row">
             <button class="btn-back" onclick="hideCancelConfirm()">← Keep Request</button>
-            <button class="btn-danger" id="btnConfirmCancel" onclick="confirmCancelPrivateRequest()">Withdraw Request</button>
+            <button class="btn-danger" id="btnConfirmCancel" onclick="confirmCancelPrivateRequest()">Cancel Request</button>
           </div>
         </div>
-
         <div id="lu-action-btns" class="btn-row" style="margin-top:24px;flex-wrap:wrap;gap:10px">
           <button class="btn-back" onclick="resetLookup()">← Back to Search</button>
-          <button class="btn-danger" onclick="showCancelConfirm()" style="margin-left:auto">Withdraw Request</button>
+          <button class="btn-danger" onclick="showCancelConfirm()" style="margin-left:auto">Cancel Request</button>
         </div>
       </div>`;
     return;
   }
-
   const r = res.reservation;
-  const typeNames = { small: 'Standard Table', medium: 'Medium Table', large: 'Large Table', private: 'Private Room' };
+  const typeNames = { small: 'Standard', medium: 'Medium', large: 'Large', private: 'Private Room' };
   state.lookupData = { id: r.id, oldName: r.customer_name, oldPhone: r.phone };
-
   const preOrderHtml = res.pre_orders?.length
     ? `<div class="lookup-preorders">
-         <div style="font-size:12px;color:rgba(255,255,255,.4);margin-bottom:8px;letter-spacing:.05em">PRE-ORDERS</div>
+         <div style="font-size:12px;color:rgba(255,255,255,.4);margin-bottom:8px">Pre-orders</div>
          ${res.pre_orders.map(p => `<span class="preorder-tag">${esc(p.item_name)} ×${p.quantity}</span>`).join('')}
        </div>` : '';
-
   el.innerHTML = `
     <div class="lookup-card">
       <span class="lookup-type-badge ${r.table_type}">${typeNames[r.table_type] || r.table_type}</span>
       <div class="lookup-info">
-        <div class="lookup-row"><span class="lookup-label">Table</span><span class="lookup-value"><strong style="color:var(--gold)">${esc(r.table_number)}</strong></span></div>
-        <div class="lookup-row"><span class="lookup-label">Guest Name</span><span class="lookup-value" id="lu-disp-name">${esc(r.customer_name)}</span></div>
+        <div class="lookup-row"><span class="lookup-label">Table No.</span><span class="lookup-value"><strong style="color:var(--gold)">${esc(r.table_number)}</strong></span></div>
+        <div class="lookup-row"><span class="lookup-label">Name</span><span class="lookup-value" id="lu-disp-name">${esc(r.customer_name)}</span></div>
         <div class="lookup-row"><span class="lookup-label">Phone</span><span class="lookup-value" id="lu-disp-phone">${esc(r.phone)}</span></div>
-        ${r.party_size ? `<div class="lookup-row"><span class="lookup-label">Party Size</span><span class="lookup-value">${r.party_size} guests</span></div>` : ''}
-        <div class="lookup-row"><span class="lookup-label">Booked At</span><span class="lookup-value" style="font-size:13px">${fmtDate(r.created_at)}</span></div>
+        ${r.party_size ? `<div class="lookup-row"><span class="lookup-label">Guests</span><span class="lookup-value">${r.party_size} guests</span></div>` : ''}
+        <div class="lookup-row"><span class="lookup-label">Booked at</span><span class="lookup-value" style="font-size:13px">${fmtDate(r.created_at)}</span></div>
       </div>
       ${preOrderHtml}
-
       <div id="lu-edit-form" style="display:none;margin-top:24px">
-        <div style="font-size:14px;font-weight:700;color:var(--gold);margin-bottom:16px;letter-spacing:.04em">Edit Your Booking</div>
+        <div style="font-size:14px;font-weight:700;color:var(--gold);margin-bottom:16px">Modify Booking</div>
         <div class="res-form">
           <div class="form-row">
             <label class="form-label">New Name</label>
-            <input class="form-input" id="lu-edit-name" type="text" maxlength="30" placeholder="New guest name">
+            <input class="form-input" id="lu-edit-name" type="text" maxlength="30" placeholder="New Name">
           </div>
           <div class="form-row">
-            <label class="form-label">New Phone Number</label>
-            <input class="form-input" id="lu-edit-phone" type="tel" maxlength="11" placeholder="11-digit mobile number">
+            <label class="form-label">New Phone</label>
+            <input class="form-input" id="lu-edit-phone" type="tel" maxlength="11" placeholder="11-digit phone">
           </div>
         </div>
         <div id="lu-edit-err" class="error-msg"></div>
         <div class="btn-row">
           <button class="btn-back" onclick="cancelEditLookup()">← Cancel</button>
-          <button class="btn-submit" onclick="submitEditLookup()">Save Changes</button>
+          <button class="btn-submit" onclick="submitEditLookup()">Save</button>
         </div>
       </div>
-
-      <div id="lu-edit-success" style="display:none" class="lookup-pending-note">
-        ✅ Your reservation has been updated successfully.
-      </div>
-
+      <div id="lu-edit-success" style="display:none" class="lookup-pending-note">✅ Booking updated.</div>
       <div id="lu-cancel-confirm" class="cancel-confirm-panel" style="display:none">
         <p style="color:rgba(255,255,255,.65);font-size:14px;line-height:1.75;margin-bottom:18px">
-          ⚠️ Are you sure you want to cancel your reservation at table
-          <strong style="color:var(--gold)">${esc(r.table_number)}</strong>? This cannot be undone.
+          ⚠️ Are you sure you want to cancel table <strong style="color:var(--gold)">${esc(r.table_number)}</strong>? This cannot be undone.
         </p>
         <div id="lu-cancel-err" class="error-msg"></div>
         <div class="btn-row">
-          <button class="btn-back" onclick="hideCancelConfirm()">← Keep My Booking</button>
-          <button class="btn-danger" id="btnConfirmCancel" onclick="confirmCancelReservation()">Confirm Cancellation</button>
+          <button class="btn-back" onclick="hideCancelConfirm()">← Keep Booking</button>
+          <button class="btn-danger" id="btnConfirmCancel" onclick="confirmCancelReservation()">Confirm Cancel</button>
         </div>
       </div>
-
       <div id="lu-action-btns" class="btn-row" style="margin-top:24px;flex-wrap:wrap;gap:10px">
         <button class="btn-back" onclick="resetLookup()">← Back to Search</button>
-        <button class="btn-submit" id="btnEditRes" onclick="showEditLookup()">Edit My Booking</button>
-        <button class="btn-danger" onclick="showCancelConfirm()" style="margin-left:auto">Cancel Reservation</button>
+        <button class="btn-submit" id="btnEditRes" onclick="showEditLookup()">Modify Booking</button>
+        <button class="btn-danger" onclick="showCancelConfirm()" style="margin-left:auto">Cancel Booking</button>
       </div>
     </div>`;
 }
@@ -453,58 +695,55 @@ async function submitEditLookup() {
   hideErr('lu-edit-err');
   if (!newName)  { showErr('lu-edit-err', 'Please enter your name.'); return; }
   if (!/^1[3-9]\d{9}$/.test(newPhone)) { showErr('lu-edit-err', 'Please enter a valid 11-digit phone number.'); return; }
-
   const { id, oldName, oldPhone } = state.lookupData;
   try {
     await api('customer_update_reservation', { id, new_name: newName, new_phone: newPhone, old_name: oldName, old_phone: oldPhone });
     const nameEl  = document.getElementById('lu-disp-name');
     const phoneEl = document.getElementById('lu-disp-phone');
-    if (nameEl)  nameEl.textContent  = newName;
+    if (nameEl) nameEl.textContent = newName;
     if (phoneEl) phoneEl.textContent = newPhone;
-    state.lookupData.oldName  = newName;
+    state.lookupData.oldName = newName;
     state.lookupData.oldPhone = newPhone;
-    const editSuccessEl = document.getElementById('lu-edit-success');
+    const es = document.getElementById('lu-edit-success');
     fadeOut(document.getElementById('lu-edit-form'), 220, () => {
-      fadeIn(editSuccessEl, 380);
+      fadeIn(es, 380);
       fadeIn(document.getElementById('lu-action-btns'), 380);
     });
-    document.getElementById('btnEditRes').textContent = 'Edit Again';
-  } catch(e) {
-    showErr('lu-edit-err', e.message);
-  }
+    document.getElementById('btnEditRes').textContent = 'Continue Editing';
+  } catch(e) { showErr('lu-edit-err', e.message); }
 }
 
 function resetLookup() {
   const resultPanel = document.getElementById('lu-result-panel');
-  const formPanel   = document.getElementById('lu-form-panel');
-  document.getElementById('lu-name').value  = '';
-  document.getElementById('lu-phone').value = '';
+  const formPanel = document.getElementById('lu-form-panel');
+  const nameEl = document.getElementById('lu-name');
+  const phoneEl = document.getElementById('lu-phone');
+  if (nameEl) nameEl.value = '';
+  if (phoneEl) phoneEl.value = '';
   state.lookupData = null;
   hideErr('lu-err');
   const doReset = () => {
-    document.getElementById('lu-result-content').innerHTML = '';
-    resultPanel.style.display = 'none';
+    const rc = document.getElementById('lu-result-content');
+    if (rc) rc.innerHTML = '';
+    if (resultPanel) resultPanel.style.display = 'none';
     fadeIn(formPanel, 420);
   };
-  if (resultPanel.style.display !== 'none') {
+  if (resultPanel && resultPanel.style.display !== 'none') {
     fadeOut(resultPanel, 280, doReset);
-  } else {
-    doReset();
-  }
+  } else { doReset(); }
 }
 
-/* ── CANCEL RESERVATION ────────────────────────────── */
+/* ── CANCEL ────────────────────────────────────────── */
 function showCancelConfirm() {
   fadeOut(document.getElementById('lu-action-btns'), 200, () => {
     fadeIn(document.getElementById('lu-cancel-confirm'), 360);
   });
 }
-
 function hideCancelConfirm() {
   fadeOut(document.getElementById('lu-cancel-confirm'), 200, () => {
-    const actionBtns = document.getElementById('lu-action-btns');
+    const ab = document.getElementById('lu-action-btns');
     document.getElementById('lu-cancel-err')?.classList.remove('show');
-    fadeIn(actionBtns, 360);
+    fadeIn(ab, 360);
   });
 }
 
@@ -514,31 +753,24 @@ async function confirmCancelReservation() {
   if (btn) { btn.disabled = true; btn.textContent = 'Cancelling…'; }
   hideErr('lu-cancel-err');
   try {
-    await api('customer_cancel_reservation', {
-      id:            state.lookupData.id,
-      customer_name: state.lookupData.oldName,
-      phone:         state.lookupData.oldPhone,
-    });
+    await api('customer_cancel_reservation', { id: state.lookupData.id, customer_name: state.lookupData.oldName, phone: state.lookupData.oldPhone });
     state.lookupData = null;
     const el = document.getElementById('lu-result-content');
     if (el) {
       fadeOut(el.querySelector('.lookup-card'), 260, () => {
-        el.innerHTML = `
-          <div class="lookup-card" style="text-align:center;padding:52px 32px">
-            <div style="font-size:60px;margin-bottom:20px;filter:drop-shadow(0 0 20px rgba(201,168,76,.3))">✅</div>
-            <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:26px;color:var(--white);font-weight:300;margin-bottom:12px">Reservation Cancelled</h3>
-            <p style="color:rgba(255,255,255,.55);font-size:14px;line-height:1.85;max-width:360px;margin:0 auto">
-              Your reservation has been successfully cancelled. We hope to welcome you again soon.
-            </p>
-            <div class="btn-row" style="justify-content:center;margin-top:32px">
-              <button class="btn-submit" onclick="resetLookup()">Back to Search</button>
-            </div>
-          </div>`;
+        el.innerHTML = `<div class="lookup-card" style="text-align:center;padding:52px 32px">
+          <div style="font-size:60px;margin-bottom:20px;filter:drop-shadow(0 0 20px rgba(201,168,76,.3))">✅</div>
+          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:26px;color:var(--white);font-weight:300;margin-bottom:12px">Booking Cancelled</h3>
+          <p style="color:rgba(255,255,255,.55);font-size:14px;line-height:1.85;max-width:360px;margin:0 auto">Your booking has been successfully cancelled. We look forward to welcoming you again.</p>
+          <div class="btn-row" style="justify-content:center;margin-top:32px">
+            <button class="btn-submit" onclick="resetLookup()">Back to Search</button>
+          </div>
+        </div>`;
         fadeIn(el.querySelector('.lookup-card'), 420);
       });
     }
   } catch(e) {
-    if (btn) { btn.disabled = false; btn.textContent = 'Confirm Cancellation'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirm Cancel'; }
     showErr('lu-cancel-err', e.message);
   }
 }
@@ -546,176 +778,42 @@ async function confirmCancelReservation() {
 async function confirmCancelPrivateRequest() {
   if (!state.lookupData) return;
   const btn = document.getElementById('btnConfirmCancel');
-  if (btn) { btn.disabled = true; btn.textContent = 'Withdrawing…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Cancelling…'; }
   hideErr('lu-cancel-err');
   try {
-    await api('customer_cancel_private_request', {
-      id:            state.lookupData.id,
-      customer_name: state.lookupData.name,
-      phone:         state.lookupData.phone,
-    });
+    await api('customer_cancel_private_request', { id: state.lookupData.id, customer_name: state.lookupData.name, phone: state.lookupData.phone });
     state.lookupData = null;
     const el = document.getElementById('lu-result-content');
     if (el) {
       fadeOut(el.querySelector('.lookup-card'), 260, () => {
-        el.innerHTML = `
-          <div class="lookup-card" style="text-align:center;padding:52px 32px">
-            <div style="font-size:60px;margin-bottom:20px;filter:drop-shadow(0 0 20px rgba(201,168,76,.3))">✅</div>
-            <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:26px;color:var(--white);font-weight:300;margin-bottom:12px">Request Withdrawn</h3>
-            <p style="color:rgba(255,255,255,.55);font-size:14px;line-height:1.85;max-width:360px;margin:0 auto">
-              Your private room request has been withdrawn. We hope to welcome you again soon.
-            </p>
-            <div class="btn-row" style="justify-content:center;margin-top:32px">
-              <button class="btn-submit" onclick="resetLookup()">Back to Search</button>
-            </div>
-          </div>`;
+        el.innerHTML = `<div class="lookup-card" style="text-align:center;padding:52px 32px">
+          <div style="font-size:60px;margin-bottom:20px;filter:drop-shadow(0 0 20px rgba(201,168,76,.3))">✅</div>
+          <h3 style="font-family:'Cormorant Garamond',Georgia,serif;font-size:26px;color:var(--white);font-weight:300;margin-bottom:12px">Request Cancelled</h3>
+          <p style="color:rgba(255,255,255,.55);font-size:14px;line-height:1.85;max-width:360px;margin:0 auto">The private room request has been withdrawn.</p>
+          <div class="btn-row" style="justify-content:center;margin-top:32px">
+            <button class="btn-submit" onclick="resetLookup()">Back to Search</button>
+          </div>
+        </div>`;
         fadeIn(el.querySelector('.lookup-card'), 420);
       });
     }
   } catch(e) {
-    if (btn) { btn.disabled = false; btn.textContent = 'Withdraw Request'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Cancel Request'; }
     showErr('lu-cancel-err', e.message);
   }
 }
 
-/* ── AI SMART ASSISTANT ───────────────────────────── */
-async function submitCustomerAISearch() {
-  const input = document.getElementById('aiCustomerInput');
-  const query = input.value.trim();
-  if (!query) return;
-
-  const resultsEl = document.getElementById('aiCustomerResults');
-  resultsEl.innerHTML = `<div class="ai-customer-thinking">✨ Thinking…</div>`;
-
-  try {
-    const res = await api('ai_search', { query, scope: 'customer' });
-    renderCustomerAIResult(res, query);
-  } catch (e) {
-    resultsEl.innerHTML = `<div class="ai-customer-error">${esc(e.message)}</div>`;
-  }
-}
-
-function setCustomerAIQuery(text) {
-  document.getElementById('aiCustomerInput').value = text;
-  submitCustomerAISearch();
-}
-
-function renderCustomerAIResult(res, query) {
-  const el = document.getElementById('aiCustomerResults');
-  let html = '';
-
-  if (res.ai_summary) {
-    html += `<div class="ai-customer-summary">💡 ${esc(res.ai_summary)}</div>`;
-  }
-
-  if (res.type === 'availability' && res.stats?.length) {
-    html += `<div class="ai-result-section">`;
-    const names = { small: 'Standard', medium: 'Medium', large: 'Large', private: 'Private Room' };
-    html += `<div class="ai-result-label">📊 Current Availability</div>
-      <div class="ai-res-grid">
-        ${res.stats.map(s => {
-          const avail = parseInt(s.available);
-          const total = parseInt(s.total);
-          const pct = total > 0 ? Math.round((total - avail) / total * 100) : 0;
-          return `
-          <div class="ai-avail-card">
-            <div class="ai-avail-type">${names[s.type] || s.type}</div>
-            <div class="ai-avail-number${avail === 0 ? ' none' : ''}">${avail}</div>
-            <div class="ai-avail-label">${avail} / ${total} available</div>
-            <div class="progress" style="background:rgba(255,255,255,.08)">
-              <div class="progress-fill" style="width:${pct}%"></div>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>`;
-    if (res.available_tables?.length) {
-      html += `<div class="ai-result-label" style="margin-top:16px;font-size:14px">🪑 Available Tables</div>
-        <div class="ai-res-table-list">
-          ${res.available_tables.map(t =>
-            `<div class="ai-res-table-row">
-              <span class="table-num">${esc(t.table_number)}</span>
-              <span class="table-info">${names[t.type] || t.type} · ${t.min_capacity}–${t.max_capacity} guests</span>
-            </div>`
-          ).join('')}
-        </div>`;
-    }
-    html += `</div>`;
-  } else if (res.type === 'reservations' && res.results?.length) {
-    html += `<div class="ai-result-section">
-      <div class="ai-result-label">📋 Found ${res.count} reservation(s)</div>
-      ${res.results.map(r => `
-        <div class="ai-res-card">
-          <div class="ai-res-table">${esc(r.table_number)} <span class="tag">${esc(r.table_type)}</span></div>
-          <div class="ai-res-name">${esc(r.customer_name)} · ${esc(r.phone)}</div>
-          ${r.party_size ? `<div class="ai-res-detail">${r.party_size} guests</div>` : ''}
-        </div>
-      `).join('')}
-    </div>`;
-  } else if (res.type === 'tables' && res.results?.length) {
-    html += `<div class="ai-result-section">
-      <div class="ai-result-label">🪑 Found ${res.count} table(s)</div>
-      <div class="ai-res-table-list">
-        ${res.results.map(t => `
-          <div class="ai-res-table-row">
-            <span class="table-num">${esc(t.table_number)}</span>
-            <span class="table-info">${esc(t.type)} · ${t.min_capacity}–${t.max_capacity} guests</span>
-          </div>
-        `).join('')}
-      </div>
-    </div>`;
-  } else if (res.type === 'employees' && res.results?.length) {
-    html += `<div class="ai-result-section">
-      <div class="ai-result-label">👥 Found ${res.count} employee(s)</div>
-      <div class="ai-res-table-list">
-        ${res.results.map(e => `
-          <div class="ai-res-table-row">
-            <span class="table-num">${esc(e.full_name)}</span>
-            <span class="table-info">${esc(e.username)} · ${e.is_active ? 'Active' : 'Disabled'}</span>
-          </div>
-        `).join('')}
-      </div>
-    </div>`;
-  }
-
-  if (!html) {
-    if (res.results && res.results.length === 0) {
-      html = `<div class="ai-customer-empty">No results found. Try rephrasing your question.</div>`;
-    } else {
-      html = `<div class="ai-customer-empty">No info found for "${esc(query)}". Try asking about availability or reservations.</div>`;
-    }
-  }
-
-  if (res.ai_suggestion) {
-    html += `<div class="ai-customer-suggestion">💡 ${esc(res.ai_suggestion)}</div>`;
-  }
-
-  el.innerHTML = html;
-}
-
-/* ── HELPERS ───────────────────────────────────────── */
-async function api(action, body = {}) {
-  const params = new URLSearchParams({ action });
-  const resp   = await fetch(`api.php?${params}`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
-  });
-  const json = await resp.json();
-  if (!json.success) throw new Error(json.error || 'Request failed.');
-  return json;
-}
-
+/* ═══════════════════════════════════════════════════════
+   HELPERS
+   ═══════════════════════════════════════════════════════ */
 function esc(str) {
-  return String(str ?? '').replace(/[&<>"']/g, c =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
-  );
+  return String(str ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' })[c]);
 }
 
 function fmtDate(str) {
   if (!str) return '—';
   const d = new Date(str);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} `
-       + `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
 }
 
 function showErr(id, msg) {
@@ -727,7 +825,9 @@ function hideErr(id) {
   if (el) el.classList.remove('show');
 }
 
-/* ── VISUAL EFFECTS ────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════
+   VISUAL EFFECTS (kept from original)
+   ═══════════════════════════════════════════════════════ */
 function initVisualEffects() {
   initNavScroll();
   initScrollReveal();
@@ -739,25 +839,19 @@ function initVisualEffects() {
 function initNavScroll() {
   const nav = document.getElementById('mainNav');
   if (!nav) return;
-  window.addEventListener('scroll', () => {
-    nav.classList.toggle('scrolled', window.scrollY > 72);
-  }, { passive: true });
+  window.addEventListener('scroll', () => { nav.classList.toggle('scrolled', window.scrollY > 72); }, { passive: true });
 }
 
 function initScrollReveal() {
   const els = document.querySelectorAll('.reveal');
   if (!els.length) return;
   const obs = new IntersectionObserver((entries) => {
-    entries.forEach(e => {
-      if (e.isIntersecting) { e.target.classList.add('revealed'); obs.unobserve(e.target); }
-    });
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('revealed'); obs.unobserve(e.target); } });
   }, { threshold: 0.14 });
   els.forEach(el => obs.observe(el));
-
-  /* stagger menu cards */
-  document.querySelectorAll('.menu-card').forEach((card, i) => {
+  document.querySelectorAll('.menu-card, .restaurant-card').forEach((card, i) => {
     card.classList.add('reveal');
-    card.style.transitionDelay = `${i * 0.1}s`;
+    card.style.transitionDelay = `${i * 0.06}s`;
     obs.observe(card);
   });
 }
@@ -765,19 +859,16 @@ function initScrollReveal() {
 function initCardTilt() {
   const applyTilt = (selector, maxRY, maxRX) => {
     document.querySelectorAll(selector).forEach(card => {
-      card.addEventListener('mouseenter', () => {
-        card.style.transition = 'transform .1s ease, box-shadow .35s cubic-bezier(.4,0,.2,1)';
-      });
+      card.addEventListener('mouseenter', () => { card.style.transition = 'transform .1s ease, box-shadow .35s cubic-bezier(.4,0,.2,1)'; });
       card.addEventListener('mousemove', e => {
-        const r  = card.getBoundingClientRect();
-        const x  = (e.clientX - r.left - r.width  / 2) / (r.width  / 2);
-        const y  = (e.clientY - r.top  - r.height / 2) / (r.height / 2);
+        const r = card.getBoundingClientRect();
+        const x = (e.clientX - r.left - r.width / 2) / (r.width / 2);
+        const y = (e.clientY - r.top - r.height / 2) / (r.height / 2);
         card.style.setProperty('--card-ry', `${x * maxRY}deg`);
         card.style.setProperty('--card-rx', `${-y * maxRX}deg`);
         card.style.setProperty('--card-tz', '8px');
-        /* spotlight follow on table cards */
         const pct = ((e.clientX - r.left) / r.width * 100).toFixed(1);
-        const pct2 = ((e.clientY - r.top)  / r.height * 100).toFixed(1);
+        const pct2 = ((e.clientY - r.top) / r.height * 100).toFixed(1);
         card.style.setProperty('--mx', `${pct}%`);
         card.style.setProperty('--my', `${pct2}%`);
       });
@@ -789,8 +880,8 @@ function initCardTilt() {
       });
     });
   };
-  applyTilt('.menu-card',       11, 7);
-  applyTilt('.table-type-card',  9, 5);
+  applyTilt('.restaurant-card', 7, 4);
+  applyTilt('.table-type-card', 9, 5);
 }
 
 function initStatCounters() {
@@ -799,10 +890,10 @@ function initStatCounters() {
   const obs = new IntersectionObserver((entries) => {
     entries.forEach(e => {
       if (!e.isIntersecting) return;
-      const el     = e.target;
+      const el = e.target;
       const target = el.dataset.count;
       const suffix = target.replace(/[0-9]/g, '');
-      const num    = parseInt(target, 10);
+      const num = parseInt(target, 10);
       el.textContent = '0' + suffix;
       const dur = 1800;
       const start = performance.now();
@@ -820,13 +911,13 @@ function initStatCounters() {
 }
 
 function initHeroCursor() {
-  const hero  = document.querySelector('.hero');
-  const glow  = document.getElementById('heroCursorGlow');
+  const hero = document.querySelector('.hero');
+  const glow = document.getElementById('heroCursorGlow');
   if (!hero || !glow) return;
   hero.addEventListener('mousemove', e => {
     const r = hero.getBoundingClientRect();
-    const x = ((e.clientX - r.left) / r.width  * 100).toFixed(1);
-    const y = ((e.clientY - r.top)  / r.height * 100).toFixed(1);
+    const x = ((e.clientX - r.left) / r.width * 100).toFixed(1);
+    const y = ((e.clientY - r.top) / r.height * 100).toFixed(1);
     glow.style.setProperty('--mx', `${x}%`);
     glow.style.setProperty('--my', `${y}%`);
   }, { passive: true });
