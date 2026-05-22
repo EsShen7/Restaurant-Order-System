@@ -552,6 +552,11 @@ section { padding: 100px 40px; }
 }
 .table-type-card.selected::before { opacity: 1; }
 .table-type-card.disabled { opacity: .35; pointer-events: none; }
+.table-type-card.recommended {
+  border-color: rgba(201,168,76,.38);
+  box-shadow: 0 0 0 1px rgba(201,168,76,.18), 0 0 20px rgba(201,168,76,.08);
+}
+.table-type-card.recommended::after { animation: cardShine .6s ease forwards; }
 
 .table-type-card .type-icon {
   font-size: 36px; margin-bottom: 14px;

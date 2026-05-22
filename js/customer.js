@@ -6,6 +6,8 @@ const state = {
   reservationId: null,
   menuItems: [],
   lookupData: null,
+  customer: null,   // logged-in customer info
+  partySize: 2,     // party size filter
 };
 
 /* ── INIT ──────────────────────────────────────────── */
@@ -13,10 +15,146 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('startBtn')?.addEventListener('click', scrollToReservation);
   document.getElementById('navBookBtn')?.addEventListener('click', scrollToReservation);
   document.getElementById('navManageBtn')?.addEventListener('click', scrollToManage);
+
+  // Populate nav user info from auth check done before page load
+  initNavUser();
   loadAvailability();
   loadMenu();
+  loadMyBookings();
   initVisualEffects();
 });
+
+/* ── NAV USER ──────────────────────────────────────── */
+function initNavUser() {
+  const c = window.__customer;
+  if (!c) return;
+  state.customer = c;
+  const avatarEl = document.getElementById('navAvatar');
+  const nameEl   = document.getElementById('navUName');
+  if (avatarEl) avatarEl.textContent = (c.name || '?')[0].toUpperCase();
+  if (nameEl)   nameEl.textContent   = c.name || c.email || '';
+
+  // Prefill reservation form with customer data
+  const nameInput  = document.getElementById('res-name');
+  const phoneInput = document.getElementById('res-phone');
+  if (nameInput  && !nameInput.value  && c.name)  nameInput.value  = c.name;
+  if (phoneInput && !phoneInput.value && c.phone) phoneInput.value = c.phone;
+}
+
+/* ── LOGOUT ────────────────────────────────────────── */
+async function logout() {
+  try { await api('customer_logout'); } catch(e) {}
+  location.href = 'index.html';
+}
+
+/* ── PARTY SIZE FILTER ─────────────────────────────── */
+function changePartySize(delta) {
+  state.partySize = Math.max(1, Math.min(20, state.partySize + delta));
+  const el = document.getElementById('partySizeDisplay');
+  if (el) el.textContent = state.partySize;
+  updatePartyHint();
+  highlightRecommendedTable();
+}
+
+function updatePartyHint() {
+  const n = state.partySize;
+  const hintEl = document.getElementById('partyHint');
+  if (!hintEl) return;
+  if (n <= 2)       hintEl.textContent = 'Standard table recommended';
+  else if (n <= 4)  hintEl.textContent = 'Medium table recommended';
+  else if (n <= 8)  hintEl.textContent = 'Large table recommended';
+  else              hintEl.textContent = 'Private room recommended for large parties';
+}
+
+function highlightRecommendedTable() {
+  const n = state.partySize;
+  let rec = 'small';
+  if (n >= 3 && n <= 4)  rec = 'medium';
+  else if (n >= 5 && n <= 8) rec = 'large';
+  else if (n > 8)        rec = 'private';
+
+  ['small','medium','large','private'].forEach(t => {
+    const card = document.getElementById('card-' + t);
+    if (!card) return;
+    card.classList.toggle('recommended', t === rec);
+  });
+}
+
+/* ── MY BOOKINGS ───────────────────────────────────── */
+async function loadMyBookings() {
+  const el = document.getElementById('myBookingsContent');
+  if (!el) return;
+  try {
+    const res = await api('my_reservations');
+    renderMyBookings(res.reservations || []);
+  } catch(e) {
+    el.innerHTML = `<div class="my-bookings-empty">
+      <div class="my-bookings-empty-icon">📋</div>
+      <p>Unable to load reservations. ${esc(e.message)}</p>
+    </div>`;
+  }
+}
+
+function renderMyBookings(list) {
+  const el = document.getElementById('myBookingsContent');
+  if (!el) return;
+  if (!list.length) {
+    el.innerHTML = `<div class="my-bookings-empty">
+      <div class="my-bookings-empty-icon">🍽️</div>
+      <p>No active reservations yet.</p>
+      <p style="margin-top:8px;font-size:13px;color:rgba(255,255,255,.25)">
+        Use the <a href="#reservation" style="color:var(--gold)">Reserve a Table</a> section above to make your first booking.
+      </p>
+    </div>`;
+    return;
+  }
+  const typeNames = { small: 'Standard', medium: 'Medium', large: 'Large', private: 'Private Room' };
+  el.innerHTML = `<div class="my-bookings-grid">
+    ${list.map(r => `
+      <div class="booking-card" id="bk-${r.id}">
+        <div class="booking-card-top">
+          <span class="bk-type-badge ${r.table_type}">${typeNames[r.table_type] || r.table_type}</span>
+          <span class="bk-table-num">Table ${esc(r.table_number)}</span>
+        </div>
+        <div class="bk-row">Guest: <strong>${esc(r.customer_name)}</strong></div>
+        <div class="bk-row">Phone: <strong>${esc(r.phone)}</strong></div>
+        ${r.party_size ? `<div class="bk-row">Party: <strong>${r.party_size} guests</strong></div>` : ''}
+        ${r.pre_orders_summary ? `<div class="bk-preorders">${
+          r.pre_orders_summary.split(', ').map(s => `<span class="bk-po-tag">${esc(s)}</span>`).join('')
+        }</div>` : ''}
+        <div class="bk-date">Booked ${fmtDate(r.created_at)}</div>
+        <div class="bk-actions">
+          <button class="bk-cancel-btn" onclick="cancelMyBooking(${r.id},'${esc(r.customer_name)}','${esc(r.phone)}',this)">
+            Cancel Reservation
+          </button>
+        </div>
+      </div>
+    `).join('')}
+  </div>`;
+}
+
+async function cancelMyBooking(id, name, phone, btn) {
+  if (!confirm('Are you sure you want to cancel this reservation? This cannot be undone.')) return;
+  btn.disabled = true; btn.textContent = 'Cancelling…';
+  try {
+    await api('customer_cancel_reservation', { id, customer_name: name, phone });
+    const card = document.getElementById('bk-' + id);
+    if (card) {
+      card.innerHTML = `<div class="bk-cancelled-overlay">✅ Reservation cancelled successfully.</div>`;
+      setTimeout(() => { card.style.opacity='0'; card.style.transition='opacity .5s'; setTimeout(()=>loadMyBookings(),520); }, 1800);
+    }
+  } catch(e) {
+    btn.disabled = false; btn.textContent = 'Cancel Reservation';
+    alert(e.message);
+  }
+}
+
+/* ── AFTER BOOKING: scroll to my-bookings ─────────── */
+function afterBookingDone() {
+  resetReservation();
+  loadMyBookings();
+  setTimeout(() => document.getElementById('my-bookings')?.scrollIntoView({ behavior: 'smooth' }), 100);
+}
 
 function scrollToReservation() {
   document.getElementById('reservation').scrollIntoView({ behavior: 'smooth' });
