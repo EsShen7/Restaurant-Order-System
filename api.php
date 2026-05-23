@@ -30,14 +30,18 @@ function isAdmin(){ return !empty($_SESSION['is_admin']); }
 function auth()  { if (!uid()) err('Not logged in.', 401); }
 function admin() { auth(); if (!isAdmin()) err('Administrator access required.', 403); }
 
+function cid()   { return $_SESSION['cid']   ?? null; }
+function cauth() { if (!cid()) err('Please sign in to continue.', 401); }
+
 // lightweight maintenance on each request
 doMaintenance();
 
 switch ($action) {
     // Public
-    case 'get_availability':      getAvailability();    break;
-    case 'make_reservation':      makeReservation();    break;
-    case 'request_private_room':  requestPrivateRoom(); break;
+    case 'get_availability':      getAvailability();      break;
+    case 'get_all_availability':  getAllAvailability();    break;
+    case 'make_reservation':      makeReservation();      break;
+    case 'request_private_room':  requestPrivateRoom();   break;
 
     // Public — menu & customer self-service
     case 'get_menu':                     getMenu();                    break;
@@ -49,11 +53,21 @@ switch ($action) {
     case 'add_review':                   addReview();                  break;
     case 'get_recommendation_feedback':  logRecommendFeedback();       break;
     case 'ai_search':                    aiSearch();                   break;
+    case 'ai_restaurant_search':         aiRestaurantSearch();         break;
+    case 'get_reviews':                  getReviews();                 break;
+    case 'submit_review':                cauth(); submitReview();      break;
     case 'add_pre_order':               addPreOrder();                break;
     case 'find_customer_reservation':   findCustomerReservation();    break;
     case 'customer_update_reservation':     customerUpdateReservation();      break;
     case 'customer_cancel_reservation':     customerCancelReservation();      break;
     case 'customer_cancel_private_request': customerCancelPrivateRequest();   break;
+
+    // Customer Auth
+    case 'customer_register':    customerRegister();    break;
+    case 'customer_login':       customerLogin();       break;
+    case 'customer_logout':      customerLogout();      break;
+    case 'customer_check_auth':  customerCheckAuth();   break;
+    case 'my_reservations':      cauth(); myReservations(); break;
 
     // Auth
     case 'login':       handleLogin();   break;
@@ -94,54 +108,109 @@ switch ($action) {
    ============================================================ */
 
 function getAvailability() {
-    $db = getDB();
-    $sql = "SELECT dt.type,
-                   COUNT(*) AS total,
-                   COUNT(*) - COUNT(r.id) AS available
-            FROM dining_tables dt
-            LEFT JOIN reservations r
-              ON r.table_id = dt.id AND r.status = 'confirmed'
-            GROUP BY dt.type";
-    $rows = $db->query($sql)->fetchAll();
+    global $data;
+    $db           = getDB();
+    $restaurantId = $data['restaurant_id'] ?? 'cloud-pavilion';
+    $date         = $data['date'] ?? date('Y-m-d');
+
+    $stmt = $db->prepare(
+        "SELECT dt.type,
+                COUNT(*) AS total,
+                COUNT(*) - COUNT(r.id) AS available
+         FROM dining_tables dt
+         LEFT JOIN reservations r
+           ON r.table_id = dt.id AND r.status='confirmed' AND r.visit_date = ?
+         WHERE dt.restaurant_id = ?
+         GROUP BY dt.type"
+    );
+    $stmt->execute([$date, $restaurantId]);
     $result = [];
-    foreach ($rows as $row) $result[$row['type']] = $row;
-    // Also return private room breakdown
-    $priv = $db->query("SELECT dt.table_number, dt.min_capacity, dt.max_capacity,
-                                (SELECT COUNT(*) FROM reservations r WHERE r.table_id=dt.id AND r.status='confirmed') AS reserved
-                         FROM dining_tables dt WHERE dt.type='private' ORDER BY dt.min_capacity, dt.table_number")->fetchAll();
-    ok(['types' => $result, 'private_rooms' => $priv]);
+    foreach ($stmt->fetchAll() as $row) $result[$row['type']] = $row;
+    ok(['types' => $result, 'restaurant_id' => $restaurantId, 'date' => $date]);
+}
+
+function getAllAvailability() {
+    global $data;
+    $db   = getDB();
+    $date = $data['date'] ?? date('Y-m-d');
+
+    $stmt = $db->prepare(
+        "SELECT dt.restaurant_id, dt.type,
+                COUNT(*) AS total,
+                COUNT(*) - COUNT(r.id) AS available
+         FROM dining_tables dt
+         LEFT JOIN reservations r
+           ON r.table_id = dt.id AND r.status='confirmed' AND r.visit_date = ?
+         GROUP BY dt.restaurant_id, dt.type"
+    );
+    $stmt->execute([$date]);
+    $result = [];
+    foreach ($stmt->fetchAll() as $row) {
+        $result[$row['restaurant_id']][$row['type']] = $row;
+    }
+    ok(['availability' => $result, 'date' => $date]);
 }
 
 function makeReservation() {
     global $data;
-    $type  = $data['table_type'] ?? '';
-    $name  = trim($data['customer_name'] ?? '');
-    $phone = trim($data['phone'] ?? '');
+    $restaurantId = trim($data['restaurant_id'] ?? 'cloud-pavilion');
+    $type      = $data['table_type'] ?? '';
+    $name      = trim($data['customer_name'] ?? '');
+    $phone     = trim($data['phone'] ?? '');
+    $visitDate = $data['visit_date'] ?? date('Y-m-d');
+    $visitTime = trim($data['visit_time'] ?? '');
+    $partySize = (int)($data['party_size'] ?? 0) ?: null;
 
-    if (!in_array($type, ['small','medium','large'])) err('Invalid table type.');
-    if (!$name)  err('Please enter your name.');
-    if (!preg_match('/^1[3-9]\d{9}$/', $phone)) err('Please enter a valid phone number.');
+    if (!in_array($type, ['small','medium','large','private'])) err('请选择桌型。');
+    if (!$name)  err('请填写您的姓名。');
+    if (!preg_match('/^1[3-9]\d{9}$/', $phone)) err('请填写正确的11位手机号。');
+    if (!$visitDate || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $visitDate)) err('请选择用餐日期。');
+    if (!$visitTime) err('请选择用餐时间。');
+    if (strtotime($visitDate) < strtotime(date('Y-m-d'))) err('预订日期不能早于今天。');
 
     $db = getDB();
-    // Find an available table of this type
-    $stmt = $db->prepare(
-        "SELECT dt.id FROM dining_tables dt
-         WHERE dt.type = ?
-           AND dt.id NOT IN (SELECT table_id FROM reservations WHERE status='confirmed')
-         LIMIT 1"
-    );
-    $stmt->execute([$type]);
-    $table = $stmt->fetch();
-    if (!$table) err('No tables of this type are currently available. Please select another type.');
 
-    $ins = $db->prepare("INSERT INTO reservations (table_id,customer_name,phone) VALUES (?,?,?)");
-    $ins->execute([$table['id'], $name, $phone]);
+    // Validate time within business hours
+    $restStmt = $db->prepare("SELECT name_zh, open_time, close_time FROM restaurants WHERE id=?");
+    $restStmt->execute([$restaurantId]);
+    $rest = $restStmt->fetch();
+    if ($rest) {
+        $vt    = strtotime("$visitDate $visitTime");
+        $open  = strtotime("$visitDate {$rest['open_time']}");
+        $close = strtotime("$visitDate {$rest['close_time']}");
+        $last  = $close - 3600; // last booking 1 hour before close
+        if ($vt < $open || $vt > $last) {
+            $lastStr = date('H:i', $last);
+            err("{$rest['name_zh']} 营业时间 {$rest['open_time']}–{$rest['close_time']}，最晚可预订 {$lastStr}。");
+        }
+        $restName = $rest['name_zh'];
+    } else {
+        $restName = $restaurantId;
+    }
+
+    // Find available table for this restaurant + date
+    $stmt = $db->prepare(
+        "SELECT dt.id, dt.table_number FROM dining_tables dt
+         WHERE dt.restaurant_id = ? AND dt.type = ?
+           AND dt.id NOT IN (
+               SELECT table_id FROM reservations
+               WHERE status='confirmed' AND visit_date = ?
+           )
+         ORDER BY dt.table_number LIMIT 1"
+    );
+    $stmt->execute([$restaurantId, $type, $visitDate]);
+    $table = $stmt->fetch();
+    if (!$table) err('该日期此桌型已无空位，请换个日期或桌型。');
+
+    $ins = $db->prepare(
+        "INSERT INTO reservations
+         (restaurant_id, table_id, customer_name, phone, party_size, visit_date, visit_time, customer_id)
+         VALUES (?,?,?,?,?,?,?,?)"
+    );
+    $ins->execute([$restaurantId, $table['id'], $name, $phone, $partySize, $visitDate, $visitTime, cid()]);
     $resId = (int)$db->lastInsertId();
-    // Get table number for notification
-    $tblStmt = $db->prepare("SELECT table_number FROM dining_tables WHERE id=?");
-    $tblStmt->execute([$table['id']]);
-    $tbl = $tblStmt->fetch();
-    ok(['message' => 'Reservation confirmed! Thank you for choosing Cloud Pavilion. We look forward to welcoming you.', 'reservation_id' => $resId]);
+
+    ok(['message' => "预订成功！欢迎光临{$restName}，期待您的到来。", 'reservation_id' => $resId]);
 }
 
 function requestPrivateRoom() {
@@ -158,6 +227,115 @@ function requestPrivateRoom() {
     broadcastNotification('new_private_request',
         "New private room request from {$name} (phone: {$phone}). Please process via the Pending Requests button.", $reqId);
     ok(['message' => 'Your private room request has been submitted. Our staff will contact you shortly to confirm the arrangement. Please keep your phone available.']);
+}
+
+/* ============================================================
+   CUSTOMER AUTH
+   ============================================================ */
+
+function customerRegister() {
+    global $data;
+    $name  = trim($data['full_name'] ?? '');
+    $email = strtolower(trim($data['email'] ?? ''));
+    $phone = trim($data['phone'] ?? '') ?: null;
+    $pass  = $data['password'] ?? '';
+
+    if (!$name)  err('Please enter your name.');
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) err('Invalid email address.');
+    if (strlen($pass) < 6) err('Password must be at least 6 characters.');
+    if ($phone && !preg_match('/^1[3-9]\d{9}$/', $phone)) err('Please enter a valid phone number.');
+
+    $db  = getDB();
+    $chk = $db->prepare("SELECT id FROM customers WHERE email=?");
+    $chk->execute([$email]);
+    if ($chk->fetch()) err('This email is already registered. Please sign in.');
+
+    $hash = password_hash($pass, PASSWORD_BCRYPT);
+    $db->prepare("INSERT INTO customers (full_name,email,password_hash,phone) VALUES (?,?,?,?)")
+       ->execute([$name, $email, $hash, $phone]);
+    $newId = (int)$db->lastInsertId();
+
+    $_SESSION['cid']    = $newId;
+    $_SESSION['cname']  = $name;
+    $_SESSION['cemail'] = $email;
+
+    ok(['uid' => $newId, 'name' => $name, 'email' => $email, 'phone' => $phone]);
+}
+
+function customerLogin() {
+    global $data;
+    $email = strtolower(trim($data['email'] ?? ''));
+    $pass  = $data['password'] ?? '';
+    if (!$email || !$pass) err('Please enter your email and password.');
+
+    $db   = getDB();
+    $stmt = $db->prepare("SELECT * FROM customers WHERE email=?");
+    $stmt->execute([$email]);
+    $cust = $stmt->fetch();
+
+    if (!$cust || !password_verify($pass, $cust['password_hash'])) {
+        err('Incorrect email or password.');
+    }
+
+    $_SESSION['cid']    = $cust['id'];
+    $_SESSION['cname']  = $cust['full_name'];
+    $_SESSION['cemail'] = $cust['email'];
+
+    ok(['uid' => $cust['id'], 'name' => $cust['full_name'],
+        'email' => $cust['email'], 'phone' => $cust['phone']]);
+}
+
+function customerLogout() {
+    unset($_SESSION['cid'], $_SESSION['cname'], $_SESSION['cemail']);
+    ok();
+}
+
+function customerCheckAuth() {
+    if (!cid()) { ok(['logged_in' => false]); return; }
+    $db   = getDB();
+    $stmt = $db->prepare("SELECT id,full_name,email,phone FROM customers WHERE id=?");
+    $stmt->execute([cid()]);
+    $c = $stmt->fetch();
+    if (!$c) {
+        unset($_SESSION['cid'], $_SESSION['cname'], $_SESSION['cemail']);
+        ok(['logged_in' => false]);
+        return;
+    }
+    ok(['logged_in' => true, 'uid' => $c['id'], 'name' => $c['full_name'],
+        'email' => $c['email'], 'phone' => $c['phone']]);
+}
+
+function myReservations() {
+    $db = getDB();
+
+    $prof = $db->prepare("SELECT full_name, phone FROM customers WHERE id=?");
+    $prof->execute([cid()]);
+    $cust = $prof->fetch();
+
+    $sql = "SELECT r.id, r.customer_name, r.phone, r.party_size, r.status,
+                   r.visit_date, r.visit_time, r.restaurant_id, r.created_at,
+                   COALESCE(rs.name_zh, r.restaurant_id) AS restaurant_name,
+                   dt.table_number, dt.type AS table_type,
+                   dt.min_capacity, dt.max_capacity,
+                   (SELECT GROUP_CONCAT(po.item_name,' ×',po.quantity ORDER BY po.id SEPARATOR ', ')
+                    FROM pre_orders po WHERE po.reservation_id=r.id) AS pre_orders_summary
+            FROM reservations r
+            JOIN dining_tables dt ON dt.id = r.table_id
+            LEFT JOIN restaurants rs ON rs.id = r.restaurant_id
+            WHERE r.status='confirmed'
+              AND (r.customer_id = ?";
+    $params = [cid()];
+
+    if (!empty($cust['phone'])) {
+        $sql .= " OR r.phone = ?";
+        $params[] = $cust['phone'];
+    }
+
+    $sql .= ") ORDER BY r.visit_date ASC, r.visit_time ASC, r.created_at DESC";
+
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    ok(['reservations' => $stmt->fetchAll()]);
 }
 
 /* ============================================================
@@ -1070,6 +1248,153 @@ function logRecommendFeedback() {
    AI-POWERED SMART SEARCH (DeepSeek AI + keyword fallback)
    ============================================================ */
 
+/* ============================================================
+   AI 餐厅推荐搜索
+   ============================================================ */
+
+/* ============================================================
+   REVIEWS
+   ============================================================ */
+
+function getReviews() {
+    global $data;
+    $rid  = trim($data['restaurant_id'] ?? '');
+    if (!$rid) err('Missing restaurant_id.');
+    $db   = getDB();
+
+    $stmt = $db->prepare(
+        "SELECT id, reviewer_name, rating, comment, visit_date, created_at
+         FROM reviews WHERE restaurant_id=?
+         ORDER BY created_at DESC LIMIT 60"
+    );
+    $stmt->execute([$rid]);
+    $reviews = $stmt->fetchAll();
+
+    $s = $db->prepare(
+        "SELECT COUNT(*) AS total, ROUND(AVG(rating),1) AS avg_rating,
+                SUM(rating=5) AS r5, SUM(rating=4) AS r4,
+                SUM(rating=3) AS r3, SUM(rating=2) AS r2, SUM(rating=1) AS r1
+         FROM reviews WHERE restaurant_id=?"
+    );
+    $s->execute([$rid]);
+    $stat = $s->fetch();
+
+    ok([
+        'reviews' => $reviews,
+        'stats'   => [
+            'total'        => (int)$stat['total'],
+            'avg_rating'   => $stat['avg_rating'] ? (float)$stat['avg_rating'] : null,
+            'distribution' => [5=>(int)$stat['r5'],4=>(int)$stat['r4'],3=>(int)$stat['r3'],2=>(int)$stat['r2'],1=>(int)$stat['r1']],
+        ],
+    ]);
+}
+
+function submitReview() {
+    global $data;
+    $rid     = trim($data['restaurant_id'] ?? '');
+    $rating  = (int)($data['rating']  ?? 0);
+    $comment = trim($data['comment']  ?? '');
+    $vdate   = $data['visit_date']    ?? null;
+
+    if (!$rid)               err('Missing restaurant ID.');
+    if ($rating < 1 || $rating > 5) err('Rating must be between 1 and 5 stars.');
+    if (mb_strlen($comment) < 10)   err('Please write at least 10 characters.');
+    if (mb_strlen($comment) > 1000) err('Review is too long (max 1,000 characters).');
+
+    $db  = getDB();
+    $chk = $db->prepare("SELECT id FROM reviews WHERE restaurant_id=? AND customer_id=?");
+    $chk->execute([$rid, cid()]);
+    if ($chk->fetch()) err('You have already reviewed this restaurant.');
+
+    // Anonymize name: "John Smith" → "John S."
+    $prof = $db->prepare("SELECT full_name FROM customers WHERE id=?");
+    $prof->execute([cid()]);
+    $c = $prof->fetch();
+    $name = $c['full_name'] ?? 'Guest';
+    $parts = preg_split('/\s+/', trim($name));
+    if (count($parts) > 1) {
+        $last  = array_pop($parts);
+        $name  = implode(' ', $parts) . ' ' . strtoupper($last[0]) . '.';
+    }
+
+    $db->prepare(
+        "INSERT INTO reviews (restaurant_id,customer_id,reviewer_name,rating,comment,visit_date)
+         VALUES (?,?,?,?,?,?)"
+    )->execute([$rid, cid(), $name, $rating, $comment, $vdate ?: null]);
+
+    ok(['message' => 'Thank you for your review!']);
+}
+
+/* ── Also create reviews table in maintenance if missing ── */
+
+function aiRestaurantSearch() {
+    global $data;
+    $query       = trim($data['query']       ?? '');
+    $restaurants = $data['restaurants']      ?? [];
+
+    if (!$query) err('请输入搜索内容。');
+    if (!$restaurants) err('未收到餐厅列表。');
+
+    // Build restaurant context for the prompt
+    $ctx = '';
+    foreach ($restaurants as $r) {
+        $tags = implode('、', (array)($r['tags'] ?? []));
+        $ctx .= "ID:{$r['id']} | {$r['nameZh']}（{$r['name']}）| 菜系:{$r['cuisine']} | 标签:{$tags} | 人均:¥{$r['avgPrice']} | 地区:{$r['district']} | 营业:{$r['hours']}\n";
+    }
+
+    $prompt = <<<PROMPT
+You are the AI search assistant for "SmartDine" restaurant platform.
+
+Restaurant list:
+{$ctx}
+
+User search: {$query}
+
+Analyse the user's intent (cuisine type, price, occasion, taste, area, mood, etc.) and select the most relevant restaurants from the list above.
+
+Return ONLY valid JSON, no other text or markdown:
+{
+  "matched_ids": ["restaurant-id-1", "restaurant-id-2"],
+  "summary": "One-sentence description of the results in English",
+  "suggestion": "A helpful follow-up tip in English, or empty string"
+}
+
+Rules:
+- matched_ids must only contain IDs from the list above
+- If nothing matches, return []
+- Understand natural language: "romantic date" → quiet, elegant places; "cheap" → low avg price; "spicy" → Sichuan/Korean/etc; "group" → places with large tables; "breakfast" → early-opening places
+- Respond in English
+PROMPT;
+
+    try {
+        $response = callAI($prompt);
+
+        // Parse JSON from response
+        $json = json_decode($response, true);
+        if (!$json) {
+            if (preg_match('/```(?:json)?\s*([\s\S]*?)\s*```/i', $response, $m))
+                $json = json_decode($m[1], true);
+        }
+        if (!$json) {
+            preg_match('/\{[\s\S]*\}/', $response, $m);
+            if ($m) $json = json_decode($m[0], true);
+        }
+
+        if (!$json || !array_key_exists('matched_ids', $json)) {
+            err('AI 解析失败，已切换到关键词搜索。');
+        }
+
+        ok([
+            'matched_ids' => array_values((array)$json['matched_ids']),
+            'summary'     => trim($json['summary']    ?? ''),
+            'suggestion'  => trim($json['suggestion'] ?? ''),
+            'ai'          => true,
+        ]);
+    } catch (Throwable $e) {
+        err('AI 暂时不可用：' . $e->getMessage());
+    }
+}
+
 function aiSearch() {
     global $data;
     $query = trim($data['query'] ?? '');
@@ -1685,6 +2010,47 @@ function getCharPinyin(string $char): string {
 
 function doMaintenance() {
     $db = getDB();
+
+    // 0. Ensure all required tables and columns exist
+    $db->exec("CREATE TABLE IF NOT EXISTS customers (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        full_name VARCHAR(100) NOT NULL,
+        email VARCHAR(150) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        phone VARCHAR(20) DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $db->exec("CREATE TABLE IF NOT EXISTS reviews (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        restaurant_id VARCHAR(60) NOT NULL,
+        customer_id INT DEFAULT NULL,
+        reviewer_name VARCHAR(100) NOT NULL DEFAULT 'Guest',
+        rating TINYINT NOT NULL,
+        comment TEXT NOT NULL,
+        visit_date DATE DEFAULT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_rest (restaurant_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $db->exec("CREATE TABLE IF NOT EXISTS restaurants (
+        id VARCHAR(60) PRIMARY KEY,
+        name_zh VARCHAR(100) NOT NULL,
+        name_en VARCHAR(100) NOT NULL,
+        open_time VARCHAR(5) NOT NULL DEFAULT '11:00',
+        close_time VARCHAR(5) NOT NULL DEFAULT '22:00'
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+
+    $addCols = [
+        "ALTER TABLE reservations ADD COLUMN customer_id INT NULL DEFAULT NULL",
+        "ALTER TABLE reservations ADD COLUMN restaurant_id VARCHAR(60) NOT NULL DEFAULT 'cloud-pavilion'",
+        "ALTER TABLE reservations ADD COLUMN visit_date DATE DEFAULT NULL",
+        "ALTER TABLE reservations ADD COLUMN visit_time VARCHAR(5) DEFAULT NULL",
+        "ALTER TABLE dining_tables ADD COLUMN restaurant_id VARCHAR(60) NOT NULL DEFAULT 'cloud-pavilion'",
+    ];
+    foreach ($addCols as $sql) {
+        try { $db->exec($sql); } catch (Throwable $e) { /* already exists */ }
+    }
 
     // 1. Delete expired username aliases
     $db->exec("DELETE FROM username_aliases WHERE expiry_date < NOW()");

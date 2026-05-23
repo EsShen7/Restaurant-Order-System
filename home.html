@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智膳 · 智能餐厅推荐系统</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --gold: #c9a84c; --dark: #09090f; --card: rgba(255,255,255,.04);
+      --border: rgba(255,255,255,.07); --muted: rgba(255,255,255,.42);
+      --white: #fff; --radius: 14px;
+    }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'PingFang SC','Microsoft YaHei',system-ui,sans-serif;
+           background: var(--dark); color: var(--white); overflow-x: hidden; min-height: 100vh; }
+
+    /* ── HEADER ──────────────────────────────────────── */
+    .app-header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(9,9,15,.92); backdrop-filter: blur(18px);
+      border-bottom: 1px solid var(--border);
+    }
+    .header-inner {
+      max-width: 1280px; margin: 0 auto;
+      display: flex; align-items: center; gap: 16px;
+      padding: 0 24px; height: 64px;
+    }
+    .header-brand {
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0; text-decoration: none;
+    }
+    .brand-icon { font-size: 26px; }
+    .brand-name { font-size: 18px; font-weight: 700; color: var(--gold); letter-spacing: .02em; }
+    .brand-sub  { font-size: 10px; color: var(--muted); letter-spacing: .06em; margin-top: 1px; }
+
+    .header-nav {
+      display: flex; align-items: center; gap: 4px;
+      overflow-x: auto; scrollbar-width: none; flex: 1; padding: 0 8px;
+    }
+    .header-nav::-webkit-scrollbar { display: none; }
+    .nav-cat {
+      padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 500;
+      color: var(--muted); cursor: pointer; white-space: nowrap;
+      transition: all .2s; border: 1px solid transparent; user-select: none;
+    }
+    .nav-cat:hover { color: var(--white); }
+    .nav-cat.active { color: var(--gold); border-color: rgba(201,168,76,.3); background: rgba(201,168,76,.07); }
+
+    .header-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .reserve-btn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 7px 14px; border-radius: 20px;
+      background: rgba(255,255,255,.05); border: 1px solid var(--border);
+      font-size: 13px; color: var(--muted); cursor: pointer;
+      transition: all .2s; position: relative;
+    }
+    .reserve-btn:hover { border-color: rgba(201,168,76,.3); color: var(--gold); }
+    .reserve-badge {
+      position: absolute; top: -4px; right: -4px;
+      width: 16px; height: 16px; border-radius: 50%;
+      background: var(--gold); color: #000; font-size: 10px;
+      font-weight: 700; display: flex; align-items: center; justify-content: center;
+    }
+    .nav-avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--gold), #a07830);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; flex-shrink: 0;
+    }
+    .nav-uname { font-size: 13px; color: var(--muted); max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .nav-logout {
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 20px; padding: 5px 12px; color: var(--muted);
+      font-size: 12px; cursor: pointer; transition: all .2s;
+    }
+    .nav-logout:hover { border-color: rgba(201,168,76,.3); color: var(--gold); }
+
+    /* ── RESERVE RECORDS PANEL ───────────────────────── */
+    .reserve-panel {
+      position: fixed; top: 65px; right: 24px; z-index: 200;
+      width: 360px; max-height: 480px; overflow-y: auto;
+      background: #13131e; border: 1px solid rgba(201,168,76,.15);
+      border-radius: var(--radius);
+      box-shadow: 0 24px 60px rgba(0,0,0,.5);
+      display: none;
+    }
+    .reserve-panel.open { display: block; animation: panelIn .2s ease; }
+    @keyframes panelIn { from { opacity:0; transform:translateY(-8px) } to { opacity:1; transform:none } }
+    .rp-header {
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      font-size: 14px; font-weight: 600; color: var(--gold);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .rp-close { cursor: pointer; color: var(--muted); font-size: 18px; }
+    .rp-item {
+      padding: 14px 20px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: flex-start; gap: 12px;
+    }
+    .rp-icon { font-size: 22px; flex-shrink: 0; }
+    .rp-name { font-size: 14px; font-weight: 600; }
+    .rp-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+    .rp-empty { padding: 32px 20px; text-align: center; color: var(--muted); font-size: 14px; }
+    .rp-loading { padding: 24px 20px; text-align: center; color: var(--muted); font-size: 13px; }
+
+    /* ── SEARCH HERO ─────────────────────────────────── */
+    .search-hero {
+      background: linear-gradient(180deg, #0d0d18 0%, #09090f 100%);
+      padding: 56px 24px 48px;
+      text-align: center; position: relative; overflow: hidden;
+    }
+    .search-hero::before {
+      content: ''; position: absolute; top: -80px; left: 50%; transform: translateX(-50%);
+      width: 600px; height: 300px;
+      background: radial-gradient(ellipse, rgba(201,168,76,.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .hero-title {
+      font-size: clamp(24px, 4vw, 40px); font-weight: 300;
+      color: var(--white); margin-bottom: 8px; letter-spacing: .02em;
+    }
+    .hero-title strong { color: var(--gold); font-weight: 700; }
+    .hero-subtitle { font-size: 14px; color: var(--muted); margin-bottom: 32px; }
+
+    .search-bar-wrap {
+      max-width: 680px; margin: 0 auto 20px;
+      display: flex; gap: 10px;
+    }
+    .search-input {
+      flex: 1; padding: 15px 22px;
+      background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12);
+      border-radius: 40px; color: var(--white); font-size: 15px;
+      outline: none; transition: border-color .2s, background .2s;
+    }
+    .search-input:focus { border-color: rgba(201,168,76,.5); background: rgba(201,168,76,.04); }
+    .search-input::placeholder { color: rgba(255,255,255,.28); }
+    .search-btn {
+      padding: 15px 28px; background: linear-gradient(135deg, var(--gold), #a07830);
+      border: none; border-radius: 40px; color: #fff; font-size: 15px; font-weight: 600;
+      cursor: pointer; white-space: nowrap; transition: opacity .2s, transform .15s;
+    }
+    .search-btn:hover { opacity: .85; transform: translateY(-1px); }
+
+    .hot-searches {
+      display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
+    }
+    .hot-tag {
+      padding: 6px 14px; background: rgba(255,255,255,.06);
+      border: 1px solid var(--border); border-radius: 20px;
+      font-size: 13px; color: var(--muted); cursor: pointer; transition: all .2s;
+    }
+    .hot-tag:hover { border-color: rgba(201,168,76,.3); color: var(--gold); background: rgba(201,168,76,.06); }
+
+    /* ── MAIN CONTENT ────────────────────────────────── */
+    .main-content { max-width: 1280px; margin: 0 auto; padding: 40px 24px 60px; }
+
+    .sec-header {
+      display: flex; align-items: baseline; gap: 12px; margin-bottom: 22px;
+    }
+    .sec-title { font-size: 20px; font-weight: 700; color: var(--white); }
+    .sec-count { font-size: 13px; color: var(--muted); }
+
+    /* ── RESTAURANT GRID ─────────────────────────────── */
+    .rest-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 18px;
+    }
+    .rest-card {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden; cursor: pointer;
+      transition: transform .25s, border-color .25s, box-shadow .25s;
+    }
+    .rest-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(201,168,76,.22);
+      box-shadow: 0 16px 48px rgba(0,0,0,.4);
+    }
+    .rc-cover {
+      height: 148px; display: flex; align-items: center; justify-content: center;
+      font-size: 66px; position: relative;
+    }
+    .rc-overlay {
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, transparent 40%, rgba(0,0,0,.5) 100%);
+    }
+    .rc-top-tags {
+      position: absolute; top: 10px; left: 10px; display: flex; gap: 6px;
+    }
+    .rc-cuisine-tag {
+      background: rgba(0,0,0,.45); backdrop-filter: blur(8px);
+      border-radius: 20px; padding: 3px 10px; font-size: 11px; color: rgba(255,255,255,.85);
+    }
+    .rc-avail-wrap { position: absolute; top: 10px; right: 10px; }
+
+    .avail-chip {
+      font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 500;
+    }
+    .avail-chip.good  { background: rgba(46,160,90,.2);  color: #6fcf97; }
+    .avail-chip.ok    { background: rgba(230,160,30,.2); color: #f2c94c; }
+    .avail-chip.tight { background: rgba(230,100,30,.2); color: #f2994a; }
+    .avail-chip.full  { background: rgba(180,40,40,.2);  color: #e87070; }
+
+    .rc-body { padding: 14px 16px 16px; }
+    .rc-names { margin-bottom: 8px; }
+    .rc-name    { font-size: 16px; font-weight: 700; color: var(--white); }
+    .rc-namezh  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .rc-rating-row {
+      display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+    }
+    .rc-score    { font-size: 14px; font-weight: 700; color: #f5c518; }
+    .rc-reviews  { font-size: 11px; color: var(--muted); }
+    .rc-price    { font-size: 13px; margin-left: auto; color: var(--muted); }
+    .rc-meta     { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .rc-tags     { display: flex; gap: 6px; flex-wrap: wrap; }
+    .rc-tag-item {
+      font-size: 11px; background: rgba(255,255,255,.06);
+      border-radius: 4px; padding: 2px 8px; color: var(--muted);
+    }
+
+    /* ── SEARCH RESULTS SECTION ──────────────────────── */
+    .search-results-sec { margin-bottom: 40px; }
+    .no-results {
+      text-align: center; padding: 60px 20px; color: var(--muted);
+    }
+    .no-results-icon { font-size: 48px; margin-bottom: 14px; opacity: .4; }
+    .no-results p { font-size: 15px; }
+
+    /* ── CATEGORY SECTION ────────────────────────────── */
+    .cat-section { margin-bottom: 48px; }
+
+    /* ── AI thinking dot ────────────────────────────── */
+    .ai-thinking-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--gold); margin-right: 6px; vertical-align: middle;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: .4; transform: scale(.7); }
+    }
+
+    /* ── SPINNER ─────────────────────────────────────── */
+    .spinner-sm {
+      width: 20px; height: 20px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,.1); border-top-color: var(--gold);
+      animation: spin .7s linear infinite; display: inline-block;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── FOOTER ──────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 36px 24px; text-align: center;
+      color: var(--muted); font-size: 13px;
+    }
+    .footer-brand { font-size: 22px; font-weight: 700; color: var(--gold); margin-bottom: 12px; }
+    .footer-links { display: flex; gap: 24px; justify-content: center; margin-bottom: 16px; }
+    .footer-links a { color: var(--muted); text-decoration: none; transition: color .2s; }
+    .footer-links a:hover { color: var(--gold); }
+
+    @media (max-width: 640px) {
+      .header-inner { padding: 0 12px; gap: 8px; }
+      .brand-sub, .nav-uname { display: none; }
+      .reserve-panel { right: 8px; width: calc(100vw - 16px); }
+      .main-content { padding: 24px 12px 40px; }
+      .search-bar-wrap { gap: 8px; }
+      .search-btn { padding: 15px 18px; font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── AUTH CHECK ─────────────────────────────────── -->
+<script>
+(function() {
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', 'api.php?action=customer_check_auth', false);
+  xhr.setRequestHeader('Content-Type', 'application/json');
+  xhr.send('{}');
+  try {
+    var j = JSON.parse(xhr.responseText);
+    if (!j.success || !j.logged_in) { location.replace('index.html'); }
+    else { window.__customer = j; }
+  } catch(e) { location.replace('index.html'); }
+})();
+</script>
+
+<!-- ── HEADER ─────────────────────────────────────── -->
+<header class="app-header" id="appHeader">
+  <div class="header-inner">
+    <a class="header-brand" href="#">
+      <span class="brand-icon">🍽️</span>
+      <div>
+        <div class="brand-name">SmartDine</div>
+        <div class="brand-sub">Smart Restaurant Discovery</div>
+      </div>
+    </a>
+
+    <nav class="header-nav" id="headerNav">
+      <div class="nav-cat active" data-cat="all"       onclick="setCategory('all')">All</div>
+      <div class="nav-cat"        data-cat="chinese"   onclick="setCategory('chinese')">Chinese</div>
+      <div class="nav-cat"        data-cat="japanese"  onclick="setCategory('japanese')">Japanese</div>
+      <div class="nav-cat"        data-cat="korean"    onclick="setCategory('korean')">Korean</div>
+      <div class="nav-cat"        data-cat="western"   onclick="setCategory('western')">Western</div>
+      <div class="nav-cat"        data-cat="seafood"   onclick="setCategory('seafood')">Seafood</div>
+      <div class="nav-cat"        data-cat="hotpot"    onclick="setCategory('hotpot')">Hot Pot</div>
+      <div class="nav-cat"        data-cat="asian"     onclick="setCategory('asian')">Asian</div>
+      <div class="nav-cat"        data-cat="fastfood"  onclick="setCategory('fastfood')">Fast Food</div>
+      <div class="nav-cat"        data-cat="cafe"      onclick="setCategory('cafe')">Café</div>
+    </nav>
+
+    <div class="header-right">
+      <div class="reserve-btn" id="reserveBtn" onclick="toggleReservePanel()">
+        <span>📋</span>
+        <span>My Bookings</span>
+        <span class="reserve-badge" id="reserveBadge" style="display:none"></span>
+      </div>
+      <div class="nav-avatar" id="navAvatar">?</div>
+      <span class="nav-uname"  id="navUName"></span>
+      <button class="nav-logout" onclick="logout()">Sign Out</button>
+    </div>
+  </div>
+</header>
+
+<!-- ── RESERVE RECORDS PANEL ──────────────────────── -->
+<div class="reserve-panel" id="reservePanel">
+  <div class="rp-header">
+    <span>📋 My Reservations</span>
+    <span class="rp-close" onclick="closeReservePanel()">×</span>
+  </div>
+  <div id="reservePanelBody">
+    <div class="rp-loading"><span class="spinner-sm"></span> Loading…</div>
+  </div>
+</div>
+
+<!-- ── SEARCH HERO ────────────────────────────────── -->
+<section class="search-hero">
+  <p class="hero-subtitle">AI-POWERED · SMART RECOMMENDATIONS</p>
+  <h1 class="hero-title">Discover Your <strong>Next Great Meal</strong></h1>
+  <div class="search-bar-wrap">
+    <input class="search-input" id="searchInput" type="text"
+           placeholder='Try "romantic dinner", "spicy", "cheap eats", "seafood"…'
+           oninput="onSearch()" onkeydown="if(event.key==='Escape') clearSearch()">
+    <button class="search-btn" onclick="onSearch()">✨ Search</button>
+  </div>
+  <div class="hot-searches">
+    <span class="hot-tag" onclick="hotSearch('hot pot')">🔥 Hot Pot</span>
+    <span class="hot-tag" onclick="hotSearch('sushi')">🍣 Sushi</span>
+    <span class="hot-tag" onclick="hotSearch('steak')">🥩 Steak</span>
+    <span class="hot-tag" onclick="hotSearch('seafood')">🦀 Seafood</span>
+    <span class="hot-tag" onclick="hotSearch('spicy')">🌶️ Spicy</span>
+    <span class="hot-tag" onclick="hotSearch('pizza')">🍕 Pizza</span>
+    <span class="hot-tag" onclick="hotSearch('romantic date')">💑 Date Night</span>
+    <span class="hot-tag" onclick="hotSearch('budget')">💰 Budget</span>
+  </div>
+</section>
+
+<!-- ── MAIN CONTENT ───────────────────────────────── -->
+<main class="main-content">
+
+  <!-- Search results (shown when searching) -->
+  <div id="searchResultsSec" style="display:none" class="search-results-sec">
+    <div class="sec-header">
+      <span class="sec-title" id="searchResultsTitle">Search Results</span>
+      <a href="#" onclick="clearSearch();return false;" style="font-size:13px;color:var(--muted);text-decoration:none">Clear</a>
+    </div>
+    <!-- AI suggestion bar -->
+    <div id="aiSuggestion" style="display:none;
+      background:rgba(201,168,76,.07); border:1px solid rgba(201,168,76,.18);
+      border-radius:10px; padding:12px 16px; margin-bottom:18px;
+      font-size:13px; color:rgba(255,255,255,.65); line-height:1.6">
+    </div>
+    <div class="rest-grid" id="searchResultsGrid"></div>
+  </div>
+
+  <!-- Default: recommended + category view -->
+  <div id="defaultContent">
+    <div class="cat-section">
+      <div class="sec-header">
+        <span class="sec-title" id="catTitle">Today's Top Picks</span>
+        <span class="sec-count" id="catCount"></span>
+      </div>
+      <div class="rest-grid" id="mainGrid"></div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── FOOTER ─────────────────────────────────────── -->
+<footer>
+  <div class="footer-brand">SmartDine</div>
+  <div class="footer-links">
+    <a href="#">About Us</a>
+    <a href="#">Partner Restaurants</a>
+    <a href="#" onclick="toggleReservePanel();return false;">My Bookings</a>
+    <a href="#" onclick="logout();return false;">Sign Out</a>
+  </div>
+  <p>© 2025 SmartDine · Smart Restaurant Discovery &nbsp;|&nbsp; Every meal, a great memory</p>
+</footer>
+
+<script src="js/restaurants.js"></script>
+<script>
+/* ── State ── */
+let currentCategory = 'all';
+let availCache = {}; // restaurant availability cache
+let reservePanelLoaded = false;
+
+/* ── Init ── */
+window.addEventListener('DOMContentLoaded', () => {
+  initUser();
+  renderMainGrid(RESTAURANTS);
+  loadAllAvailability();
+  loadReserveBadge();
+  document.addEventListener('click', (e) => {
+    if (!document.getElementById('reservePanel').contains(e.target) &&
+        !document.getElementById('reserveBtn').contains(e.target)) {
+      closeReservePanel();
+    }
+  });
+});
+
+/* ── User nav ── */
+function initUser() {
+  const c = window.__customer;
+  if (!c) return;
+  const av = document.getElementById('navAvatar');
+  const nm = document.getElementById('navUName');
+  if (av) av.textContent = (c.name || '?')[0].toUpperCase();
+  if (nm) nm.textContent = c.name || c.email || '';
+}
+
+async function logout() {
+  try { await callApi('customer_logout'); } catch(e) {}
+  location.href = 'index.html';
+}
+
+/* ── API helper ── */
+async function callApi(action, body = {}) {
+  const r = await fetch('api.php?action=' + action, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const j = await r.json();
+  if (!j.success) throw new Error(j.error || 'Request failed.');
+  return j;
+}
+
+/* ── Availability ── */
+async function loadAllAvailability() {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const res   = await callApi('get_all_availability', { date: today });
+    const data  = res.availability || {};
+    // Merge real data into cache
+    Object.entries(data).forEach(([rid, types]) => {
+      availCache[rid] = {};
+      ['small','medium','large','private'].forEach(t => {
+        availCache[rid][t] = {
+          total:     parseInt(types[t]?.total     || 0),
+          available: parseInt(types[t]?.available || 0),
+        };
+      });
+    });
+    // Fill any missing restaurants with simulated data
+    RESTAURANTS.forEach(r => {
+      if (!availCache[r.id]) availCache[r.id] = simulatedAvailability(r.id);
+    });
+    renderMainGrid(filterByCategory(currentCategory));
+  } catch(e) {
+    // Fallback to simulated
+    RESTAURANTS.forEach(r => { availCache[r.id] = simulatedAvailability(r.id); });
+  }
+}
+
+function getAvail(restaurantId) {
+  return availCache[restaurantId] || null;
+}
+
+/* ── Render restaurant card ── */
+function renderCard(r) {
+  const avail = getAvail(r.id);
+  const availHtml = avail ? availabilityBadge(avail) : '<span class="avail-chip ok">● 查看空位</span>';
+  const priceSym  = '¥'.repeat(r.priceLevel) + '<span style="opacity:.28">¥</span>'.repeat(4 - r.priceLevel);
+  return `
+    <div class="rest-card" onclick="goToRestaurant('${r.id}')">
+      <div class="rc-cover" style="background:${r.coverGradient}">
+        <span style="position:relative;z-index:1">${r.coverEmoji}</span>
+        <div class="rc-overlay"></div>
+        <div class="rc-top-tags">
+          <span class="rc-cuisine-tag">${r.cuisine.split('·')[0].trim()}</span>
+        </div>
+        <div class="rc-avail-wrap">${availHtml}</div>
+      </div>
+      <div class="rc-body">
+        <div class="rc-names">
+          <div class="rc-name">${r.name}</div>
+          <div class="rc-namezh">${r.tagline}</div>
+        </div>
+        <div class="rc-rating-row">
+          ${starsHtml(r.rating)}
+          <span class="rc-score">${r.rating}</span>
+          <span class="rc-reviews">(${r.reviewCount.toLocaleString()})</span>
+          <span class="rc-price">${priceSym}</span>
+        </div>
+        <div class="rc-meta">📍 ${r.district} &nbsp;·&nbsp; 🚶 ${r.distance} &nbsp;·&nbsp; ⏰ ${r.hours}</div>
+        <div class="rc-tags">
+          ${r.tags.slice(0, 3).map(t => `<span class="rc-tag-item">${t}</span>`).join('')}
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderMainGrid(list) {
+  const grid   = document.getElementById('mainGrid');
+  const title  = document.getElementById('catTitle');
+  const count  = document.getElementById('catCount');
+  const catMap = { all:"Today's Top Picks", chinese:'Chinese Cuisine', japanese:'Japanese',
+                   korean:'Korean BBQ', western:'Western', seafood:'Seafood',
+                   hotpot:'Hot Pot', asian:'Asian', fastfood:'Fast Food', cafe:'Café' };
+  title.textContent = catMap[currentCategory] || 'All Restaurants';
+  count.textContent = `${list.length} venue${list.length !== 1 ? 's' : ''}`;
+  grid.innerHTML = list.map(renderCard).join('');
+}
+
+/* ── Category filter ── */
+function setCategory(cat) {
+  currentCategory = cat;
+  document.querySelectorAll('.nav-cat').forEach(el => el.classList.toggle('active', el.dataset.cat === cat));
+  clearSearch();
+  const list = filterByCategory(cat);
+  renderMainGrid(list);
+}
+
+/* ── Search ── */
+let searchDebounce;
+function onSearch() {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(doSearch, 300);
+}
+
+async function doSearch() {
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) { clearSearch(); return; }
+
+  const resultsSec    = document.getElementById('searchResultsSec');
+  const defaultContent = document.getElementById('defaultContent');
+  const titleEl       = document.getElementById('searchResultsTitle');
+  const grid          = document.getElementById('searchResultsGrid');
+  const suggEl        = document.getElementById('aiSuggestion');
+
+  resultsSec.style.display   = '';
+  defaultContent.style.display = 'none';
+  if (suggEl) suggEl.style.display = 'none';
+
+  // Show AI thinking indicator
+  titleEl.innerHTML = '<span class="ai-thinking-dot"></span> AI is understanding your search…';
+  grid.innerHTML = `
+    <div style="grid-column:1/-1;text-align:center;padding:48px 20px;color:rgba(255,255,255,.35)">
+      <div style="font-size:36px;margin-bottom:14px;animation:pulse 1.4s ease-in-out infinite">✨</div>
+      <p style="font-size:14px">Analysing "<strong style="color:rgba(255,255,255,.6)">${esc(q)}</strong>"…</p>
+    </div>`;
+
+  // Build slim restaurant context to send to AI
+  const restContext = RESTAURANTS.map(r => ({
+    id: r.id, nameZh: r.nameZh, name: r.name,
+    cuisine: r.cuisine, tags: r.tags,
+    avgPrice: r.avgPrice, district: r.district, hours: r.hours,
+  }));
+
+  let results = null;
+  let aiSummary = '', aiSuggestion = '', usedAI = false;
+
+  try {
+    const res = await callApi('ai_restaurant_search', { query: q, restaurants: restContext });
+    const ids = res.matched_ids || [];
+    results     = ids.length > 0 ? RESTAURANTS.filter(r => ids.includes(r.id)) : [];
+    aiSummary   = res.summary    || '';
+    aiSuggestion = res.suggestion || '';
+    usedAI      = true;
+  } catch(e) {
+    // AI unavailable — fall back to keyword matching
+    results = searchRestaurants(q);
+  }
+
+  // Render title
+  if (usedAI && aiSummary) {
+    titleEl.innerHTML = `<span style="color:var(--gold);font-size:14px;font-weight:400">✨ AI</span>&ensp;${esc(aiSummary)}`;
+  } else {
+    titleEl.textContent = results.length > 0 ? `Found ${results.length} restaurant${results.length!==1?'s':''}` : 'No restaurants found';
+  }
+
+  // Render suggestion
+  if (suggEl && aiSuggestion) {
+    suggEl.textContent = '💡 ' + aiSuggestion;
+    suggEl.style.display = '';
+  }
+
+  // Render cards
+  if (!results.length) {
+    grid.innerHTML = `
+      <div class="no-results" style="grid-column:1/-1">
+        <div class="no-results-icon">🔍</div>
+        <p>No results for "<strong style="color:var(--white)">${esc(q)}</strong>"</p>
+        <p style="margin-top:8px;font-size:13px">
+          ${usedAI ? 'AI couldn\'t find a match — ' : ''}Try: hot pot, sushi, steak, date night, budget, seafood…
+        </p>
+      </div>`;
+  } else {
+    grid.innerHTML = results.map(renderCard).join('');
+  }
+}
+
+function hotSearch(term) {
+  document.getElementById('searchInput').value = term;
+  doSearch();
+  document.querySelector('.search-hero').scrollIntoView({ behavior: 'smooth' });
+}
+
+function clearSearch() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('searchResultsSec').style.display = 'none';
+  document.getElementById('defaultContent').style.display = '';
+  const suggEl = document.getElementById('aiSuggestion');
+  if (suggEl) suggEl.style.display = 'none';
+}
+
+/* ── Navigate to restaurant ── */
+function goToRestaurant(id) {
+  location.href = 'restaurant.html?id=' + encodeURIComponent(id);
+}
+
+/* ── Reserve Records Panel ── */
+function toggleReservePanel() {
+  const panel = document.getElementById('reservePanel');
+  if (panel.classList.contains('open')) { closeReservePanel(); return; }
+  panel.classList.add('open');
+  if (!reservePanelLoaded) loadReservePanel();
+}
+
+function closeReservePanel() {
+  document.getElementById('reservePanel').classList.remove('open');
+}
+
+async function loadReservePanel() {
+  reservePanelLoaded = true;
+  const body = document.getElementById('reservePanelBody');
+  try {
+    const res = await callApi('my_reservations');
+    const list = res.reservations || [];
+    if (!list.length) {
+      body.innerHTML = '<div class="rp-empty">📭 No reservations yet<br><span style="font-size:12px;margin-top:6px;display:block">Visit a restaurant page to make your first booking</span></div>';
+      return;
+    }
+    const typeNames = { small:'Standard', medium:'Medium', large:'Large', private:'Private Room' };
+    body.innerHTML = list.map(r => `
+      <div class="rp-item">
+        <span class="rp-icon" style="font-size:18px">${r.restaurant_id ? '🍽️' : '🏮'}</span>
+        <div>
+          <div class="rp-name">${esc(r.restaurant_name || 'Restaurant')} · ${typeNames[r.table_type] || r.table_type}</div>
+          <div class="rp-meta">📅 ${r.visit_date || '—'} ${r.visit_time ? '@ '+r.visit_time : ''}</div>
+          <div class="rp-meta">👤 ${esc(r.customer_name)} · Table ${esc(r.table_number)}</div>
+        </div>
+      </div>`).join('');
+  } catch(e) {
+    body.innerHTML = '<div class="rp-empty">Failed to load. Please try again.</div>';
+  }
+}
+
+async function loadReserveBadge() {
+  try {
+    const res  = await callApi('my_reservations');
+    const count = (res.reservations || []).length;
+    const badge = document.getElementById('reserveBadge');
+    if (count > 0) { badge.textContent = count; badge.style.display = 'flex'; }
+  } catch(e) {}
+}
+
+/* ── Utils ── */
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+function fmtDate(str) {
+  if (!str) return '—';
+  const d = new Date(str);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+</script>
+</body>
+</html>
