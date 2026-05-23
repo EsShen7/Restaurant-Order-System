@@ -215,13 +215,14 @@ function switchTab(t) {
 
 /* ── API helper ── */
 async function api(action, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (window.__csrfToken) headers['X-CSRF-Token'] = window.__csrfToken;
   const r = await fetch('api.php?action=' + encodeURIComponent(action), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body || {}),
+    method: 'POST', headers, body: JSON.stringify(body || {}),
   });
   const j = await r.json();
   if (!j.success) throw new Error(j.error || 'Request failed.');
+  if (j.csrf_token) window.__csrfToken = j.csrf_token;
   return j;
 }
 

@@ -1,7 +1,47 @@
 <?php
+$cookieParams = session_get_cookie_params();
+session_set_cookie_params([
+    'lifetime' => $cookieParams['lifetime'],
+    'path'     => $cookieParams['path'],
+    'domain'   => $cookieParams['domain'],
+    'secure'   => false,
+    'httponly' => true,
+    'samesite' => 'Strict',
+]);
 session_start();
+
+// ── Session timeout ──
+$idleTimeout = 1800;     // 30 min idle
+$absoluteTimeout = 28800; // 8 hours absolute
+$now = time();
+if (!empty($_SESSION['last_activity']) && ($now - $_SESSION['last_activity'] > $idleTimeout)) {
+    $_SESSION = [];
+    session_destroy();
+    session_start();
+    $_SESSION = [];
+}
+if (!empty($_SESSION['created_at']) && ($now - $_SESSION['created_at'] > $absoluteTimeout)) {
+    $_SESSION = [];
+    session_destroy();
+    session_start();
+    $_SESSION = [];
+}
+$_SESSION['last_activity'] = $now;
+if (empty($_SESSION['created_at'])) {
+    $_SESSION['created_at'] = $now;
+}
+
+// ── CSRF token ──
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+// ── Security headers ──
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
+header('X-Content-Type-Options: nosniff');
+header('X-Frame-Options: DENY');
+header('Referrer-Policy: same-origin');
 
 set_exception_handler(function (Throwable $e) {
     if (!headers_sent()) http_response_code(500);
@@ -15,6 +55,52 @@ require_once __DIR__ . '/ai_config.php';
 $body   = json_decode(file_get_contents('php://input'), true) ?? [];
 $data   = array_merge($_GET, $_POST, $body);
 $action = $data['action'] ?? '';
+
+// ── Actions exempt from CSRF validation (public reads, auth, AI) ──
+$csrfSafe = [
+    'get_availability', 'get_all_availability', 'get_menu',
+    'get_restaurants', 'get_restaurant', 'get_cuisines',
+    'get_recommendations', 'get_restaurant_reviews', 'get_reviews',
+    'ai_search', 'ai_restaurant_search', 'get_csrf_token',
+    'customer_check_auth', 'customer_login', 'customer_register',
+    'login', 'check_auth', 'find_customer_reservation',
+    'get_recommendation_feedback',
+];
+function validateCsrf() {
+    global $action, $csrfSafe;
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') return;
+    if (in_array($action, $csrfSafe, true)) return;
+    $header = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? '';
+    if (!$header || !hash_equals($_SESSION['csrf_token'], $header)) {
+        err('Invalid or missing CSRF token.', 403);
+    }
+}
+
+// ── Login rate limiting ──
+function clientIp(): string {
+    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+}
+function checkLoginRateLimit(): void {
+    $db = getDB();
+    $ip = clientIp();
+    $window = $db->prepare(
+        "SELECT COUNT(*) FROM login_attempts WHERE ip = ? AND attempted_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)"
+    );
+    $window->execute([$ip]);
+    if ((int)$window->fetchColumn() >= 5) {
+        err('Too many login attempts. Please try again in 15 minutes.', 429);
+    }
+}
+function recordLoginAttempt(string $status): void {
+    $db = getDB();
+    $stmt = $db->prepare("INSERT INTO login_attempts (ip, status) VALUES (?, ?)");
+    $stmt->execute([clientIp(), $status]);
+}
+function clearLoginAttempts(): void {
+    $db = getDB();
+    $stmt = $db->prepare("DELETE FROM login_attempts WHERE ip = ?");
+    $stmt->execute([clientIp()]);
+}
 
 function ok($payload = []) {
     echo json_encode(array_merge(['success' => true], $payload), JSON_UNESCAPED_UNICODE);
@@ -32,6 +118,9 @@ function admin() { auth(); if (!isAdmin()) err('Administrator access required.',
 
 function cid()   { return $_SESSION['cid']   ?? null; }
 function cauth() { if (!cid()) err('Please sign in to continue.', 401); }
+
+// CSRF validation (after action known, before any mutation)
+validateCsrf();
 
 // lightweight maintenance on each request
 doMaintenance();
@@ -268,14 +357,18 @@ function customerLogin() {
     $pass  = $data['password'] ?? '';
     if (!$email || !$pass) err('Please enter your email and password.');
 
+    checkLoginRateLimit();
+
     $db   = getDB();
     $stmt = $db->prepare("SELECT * FROM customers WHERE email=?");
     $stmt->execute([$email]);
     $cust = $stmt->fetch();
 
     if (!$cust || !password_verify($pass, $cust['password_hash'])) {
+        recordLoginAttempt('fail');
         err('Incorrect email or password.');
     }
+    clearLoginAttempts();
 
     $_SESSION['cid']    = $cust['id'];
     $_SESSION['cname']  = $cust['full_name'];
@@ -291,18 +384,18 @@ function customerLogout() {
 }
 
 function customerCheckAuth() {
-    if (!cid()) { ok(['logged_in' => false]); return; }
+    if (!cid()) { ok(['logged_in' => false, 'csrf_token' => $_SESSION['csrf_token']]); return; }
     $db   = getDB();
     $stmt = $db->prepare("SELECT id,full_name,email,phone FROM customers WHERE id=?");
     $stmt->execute([cid()]);
     $c = $stmt->fetch();
     if (!$c) {
         unset($_SESSION['cid'], $_SESSION['cname'], $_SESSION['cemail']);
-        ok(['logged_in' => false]);
+        ok(['logged_in' => false, 'csrf_token' => $_SESSION['csrf_token']]);
         return;
     }
     ok(['logged_in' => true, 'uid' => $c['id'], 'name' => $c['full_name'],
-        'email' => $c['email'], 'phone' => $c['phone']]);
+        'email' => $c['email'], 'phone' => $c['phone'], 'csrf_token' => $_SESSION['csrf_token']]);
 }
 
 function myReservations() {
@@ -348,11 +441,13 @@ function handleLogin() {
     $password  = $data['password'] ?? '';
     if (!$loginName || !$password) err('Please enter your username and password.');
 
+    checkLoginRateLimit();
+
     $db = getDB();
 
     // Find employee by username / nickname / alias
     $emp = findEmployeeByLogin($db, $loginName);
-    if (!$emp) err('Invalid username or password.');
+    if (!$emp) { recordLoginAttempt('fail'); err('Invalid username or password.'); }
     if (!$emp['is_active']) err('This account has been disabled.');
 
     $isOldAlias   = !empty($emp['_alias']); // logged in with old alias
@@ -363,13 +458,16 @@ function handleLogin() {
         // Try old password within 72h
         if ($emp['old_password_hash'] && $emp['old_password_expires'] && strtotime($emp['old_password_expires']) > time()) {
             if (!password_verify($password, $emp['old_password_hash'])) {
+                recordLoginAttempt('fail');
                 err('Invalid username or password.');
             }
             $isOldPassword = true;
         } else {
+            recordLoginAttempt('fail');
             err('Invalid username or password.');
         }
     }
+    clearLoginAttempts();
 
     // Handle old-alias login tracking
     if ($isOldAlias) {
@@ -471,12 +569,12 @@ function handleLogout() {
 }
 
 function checkAuth() {
-    if (!uid()) { ok(['logged_in' => false]); }
+    if (!uid()) { ok(['logged_in' => false, 'csrf_token' => $_SESSION['csrf_token']]); }
     $db = getDB();
     $stmt = $db->prepare("SELECT id,username,nickname,full_name,is_admin FROM employees WHERE id=?");
     $stmt->execute([uid()]);
     $emp = $stmt->fetch();
-    if (!$emp) { session_destroy(); ok(['logged_in' => false]); }
+    if (!$emp) { session_destroy(); ok(['logged_in' => false, 'csrf_token' => $_SESSION['csrf_token']]); }
 
     $unread = $db->prepare("SELECT COUNT(*) FROM notifications WHERE employee_id=? AND is_read=0");
     $unread->execute([uid()]);
@@ -485,7 +583,7 @@ function checkAuth() {
     ok(['logged_in' => true, 'uid' => $emp['id'], 'username' => $emp['username'],
         'nickname' => $emp['nickname'], 'full_name' => $emp['full_name'],
         'is_admin' => (bool)$emp['is_admin'], 'unread' => (int)$unread->fetchColumn(),
-        'pending_rooms' => (int)$pending]);
+        'pending_rooms' => (int)$pending, 'csrf_token' => $_SESSION['csrf_token']]);
 }
 
 /* ============================================================
@@ -2010,6 +2108,15 @@ function getCharPinyin(string $char): string {
 
 function doMaintenance() {
     $db = getDB();
+
+    // Login rate-limiting table
+    $db->exec("CREATE TABLE IF NOT EXISTS login_attempts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        ip VARCHAR(45) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'fail',
+        attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_ip_time (ip, attempted_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
     // 0. Ensure all required tables and columns exist
     $db->exec("CREATE TABLE IF NOT EXISTS customers (

@@ -35,14 +35,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
 /* ── API HELPER ────────────────────────────────────── */
 async function api(action, body = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (window.__csrfToken) headers['X-CSRF-Token'] = window.__csrfToken;
   const params = new URLSearchParams({ action });
   const resp = await fetch(`api.php?${params}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    method: 'POST', headers, body: JSON.stringify(body),
   });
   const json = await resp.json();
   if (!json.success) throw new Error(json.error || 'Request failed.');
+  if (json.csrf_token) window.__csrfToken = json.csrf_token;
   return json;
 }
 
@@ -284,7 +285,7 @@ function renderRestaurantCard(r, context) {
   const cuisines = r.cuisines?.map(c => `<span class="cuisine-tag">${esc(c)}</span>`).join('') || '';
   const stars = '★'.repeat(Math.round(r.avg_rating)).padEnd(5, '☆');
 
-  return `<div class="restaurant-card" onclick="openDetail(${r.id})">
+  return `<div class="restaurant-card" onclick="openDetail('${esc(r.id)}')">
     <div class="restaurant-card-img">${img}</div>
     <div class="restaurant-card-body">
       <div class="restaurant-card-header">

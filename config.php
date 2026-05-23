@@ -19,7 +19,7 @@ function getDB(): PDO {
             );
         } catch (PDOException $e) {
             http_response_code(500);
-            die(json_encode(['success' => false, 'error' => 'Database connection failed: ' . $e->getMessage()], JSON_UNESCAPED_UNICODE));
+            die(json_encode(['success' => false, 'error' => 'Database connection failed.'], JSON_UNESCAPED_UNICODE));
         }
     }
     return $pdo;

@@ -1023,14 +1023,15 @@ function showToast(msg, type = 'success') {
    API + UTILS
    ───────────────────────────────────────────────────── */
 async function api(action, body = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (window.__csrfToken) headers['X-CSRF-Token'] = window.__csrfToken;
   const resp = await fetch(`api.php?action=${action}`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
+    method: 'POST', headers, body: JSON.stringify(body),
     credentials: 'same-origin',
   });
   const json = await resp.json();
   if (!json.success) throw new Error(json.error || 'Request failed.');
+  if (json.csrf_token) window.__csrfToken = json.csrf_token;
   return json;
 }
 

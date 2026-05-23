@@ -256,7 +256,7 @@
   try {
     var j = JSON.parse(xhr.responseText);
     if (!j.success || !j.logged_in) { location.replace('index.html'); }
-    else { window.__customer = j; }
+    else { window.__customer = j; window.__csrfToken = j.csrf_token; }
   } catch(e) { location.replace('index.html'); }
 })();
 // Read restaurant id from URL
@@ -426,11 +426,14 @@ async function logout() {
 }
 
 async function apiCall(action, body = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (window.__csrfToken) headers['X-CSRF-Token'] = window.__csrfToken;
   const r = await fetch('api.php?action=' + action, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', headers, body: JSON.stringify(body),
   });
   const j = await r.json();
   if (!j.success) throw new Error(j.error || 'Request failed.');
+  if (j.csrf_token) window.__csrfToken = j.csrf_token;
   return j;
 }
 

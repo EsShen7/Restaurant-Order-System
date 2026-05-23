@@ -99,8 +99,8 @@ function callOpenAICompat(string $prompt, string $url, string $apiKey, string $m
         CURLOPT_POSTFIELDS => json_encode($payload),
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => AI_TIMEOUT,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => false,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
     ]);
 
     $response = curl_exec($ch);
@@ -157,8 +157,8 @@ function callGemini(string $prompt): string {
         CURLOPT_POSTFIELDS => json_encode($payload),
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT => AI_TIMEOUT,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => false,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
     ]);
 
     $response = curl_exec($ch);
@@ -205,8 +205,8 @@ function callOpenAICompatStream(string $prompt, string $url, string $apiKey, str
                 'ignore_errors' => true,
             ],
             'ssl' => [
-                'verify_peer'      => false,
-                'verify_peer_name' => false,
+                'verify_peer'      => true,
+                'verify_peer_name' => true,
             ],
         ]);
 
