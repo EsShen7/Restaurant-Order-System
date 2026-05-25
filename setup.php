@@ -210,40 +210,45 @@ try {
     /* ── Dining tables seed ── */
     // [restaurant_id, small, medium, large, private]
     $tableCfg = [
-        ['cloud-pavilion',  25, 40, 15, 18],
-        ['tokyo-shokunin',  20, 12,  6,  4],
-        ['bella-roma',      18, 10,  6,  4],
-        ['sichuan-dao',     30, 20, 10,  4],
-        ['prime-house',     16,  8,  6,  6],
-        ['hong-tu-seafood', 20, 14,  8,  4],
-        ['lao-zhang-hotpot',28, 18, 10,  4],
-        ['seoul-garden',    24, 16,  8,  4],
-        ['chongqing-hotpot',32, 20, 10,  4],
-        ['din-tai-fung',    22, 14,  6,  4],
-        ['le-bistro',       14,  8,  4,  4],
-        ['spice-india',     16, 10,  4,  2],
-        ['vietnam-pho',     18, 10,  4,  2],
-        ['barbeque-brazil', 20, 12,  6,  4],
-        ['dim-sum-palace',  20, 14,  6,  2],
+        ['cloud-pavilion',     25, 40, 15, 18],
+        ['tokyo-shokunin',     20, 12,  6,  4],
+        ['bella-roma',         18, 10,  6,  4],
+        ['sichuan-dao',        30, 20, 10,  4],
+        ['prime-house',        16,  8,  6,  6],
+        ['hong-tu-seafood',    20, 14,  8,  4],
+        ['lao-zhang-hotpot',   28, 18, 10,  4],
+        ['seoul-garden',       24, 16,  8,  4],
+        ['chongqing-hotpot',   32, 20, 10,  4],
+        ['din-tai-fung',       22, 14,  6,  4],
+        ['le-bistro',          14,  8,  4,  4],
+        ['spice-india',        16, 10,  4,  2],
+        ['vietnam-pho',        18, 10,  4,  2],
+        ['barbeque-brazil',    20, 12,  6,  4],
+        ['dim-sum-palace',     20, 14,  6,  2],
+        // fast food & chains
+        ['kfc',                30, 16,  6,  2],
+        ['mcdonalds',          28, 14,  6,  2],
+        ['burger-king',        24, 12,  4,  2],
+        ['pizza-hut',          20, 14,  8,  4],
+        ['haidilao',           24, 18, 10,  6],
+        ['starbucks',          20, 10,  4,  2],
+        ['tim-hortons',        18,  8,  4,  2],
+        ['nanjing-impressions',22, 14,  8,  4],
     ];
 
-    $tblCnt = $pdo->query("SELECT COUNT(*) FROM dining_tables")->fetchColumn();
-    if ($tblCnt == 0) {
-        $ins = $pdo->prepare("INSERT INTO dining_tables (restaurant_id,type,table_number,min_capacity,max_capacity) VALUES (?,?,?,?,?)");
-        foreach ($tableCfg as [$rid, $s, $m, $l, $p]) {
-            // prefix: first letters of restaurant id parts
-            $parts = explode('-', $rid);
-            $pfx   = strtoupper(implode('', array_map(fn($w) => $w[0], $parts)));
-            for ($i = 1; $i <= $s; $i++) $ins->execute([$rid,'small',  "{$pfx}-S".sprintf('%02d',$i),1,2]);
-            for ($i = 1; $i <= $m; $i++) $ins->execute([$rid,'medium', "{$pfx}-M".sprintf('%02d',$i),3,4]);
-            for ($i = 1; $i <= $l; $i++) $ins->execute([$rid,'large',  "{$pfx}-L".sprintf('%02d',$i),5,8]);
-            for ($i = 1; $i <= $p; $i++) $ins->execute([$rid,'private',"{$pfx}-P".sprintf('%02d',$i),6,20]);
-        }
-        $total = $pdo->query("SELECT COUNT(*) FROM dining_tables")->fetchColumn();
-        step("Seeded $total dining tables across all restaurants.");
-    } else {
-        step("Dining tables already exist ($tblCnt rows) — skipped.");
+    // Use INSERT IGNORE so this block is safe to re-run when new restaurants are added
+    $ins = $pdo->prepare("INSERT IGNORE INTO dining_tables (restaurant_id,type,table_number,min_capacity,max_capacity) VALUES (?,?,?,?,?)");
+    $added = 0;
+    foreach ($tableCfg as [$rid, $s, $m, $l, $p]) {
+        $parts = explode('-', $rid);
+        $pfx   = strtoupper(implode('', array_map(fn($w) => $w[0], $parts)));
+        for ($i = 1; $i <= $s; $i++) { $ins->execute([$rid,'small',  "{$pfx}-S".sprintf('%02d',$i),1,2]);   $added += $ins->rowCount(); }
+        for ($i = 1; $i <= $m; $i++) { $ins->execute([$rid,'medium', "{$pfx}-M".sprintf('%02d',$i),3,4]);   $added += $ins->rowCount(); }
+        for ($i = 1; $i <= $l; $i++) { $ins->execute([$rid,'large',  "{$pfx}-L".sprintf('%02d',$i),5,8]);   $added += $ins->rowCount(); }
+        for ($i = 1; $i <= $p; $i++) { $ins->execute([$rid,'private',"{$pfx}-P".sprintf('%02d',$i),6,20]);  $added += $ins->rowCount(); }
     }
+    $total = $pdo->query("SELECT COUNT(*) FROM dining_tables")->fetchColumn();
+    step("Dining tables: $total total, $added newly inserted.");
 
     /* ── reviews ── */
     $pdo->exec("CREATE TABLE IF NOT EXISTS reviews (
